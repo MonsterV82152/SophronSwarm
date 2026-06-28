@@ -31,6 +31,7 @@ from sophron_swarm.llm_client import LLMClient, OpenAICompatibleClient, OpenRout
 from sophron_swarm.nodes.architect import architect_node
 from sophron_swarm.nodes.coder import coder_node
 from sophron_swarm.nodes.debugger import debugger_node
+from sophron_swarm.nodes.reviewer import reviewer_node
 from sophron_swarm.nodes.sandbox import sandbox_node
 from sophron_swarm.recorder import recorder
 from sophron_swarm.router import BitmaskRouter
@@ -53,6 +54,7 @@ _ROUTING_TABLE = Path(__file__).parent / "config" / "routing_table.json"
 def build_graph(
     llm_architect: LLMClient,
     llm_coder:     LLMClient,
+    llm_reviewer:  LLMClient,
     llm_debugger:  LLMClient,
     db_path:       str = ":memory:",
 ) -> StateGraph:
@@ -67,6 +69,7 @@ def build_graph(
     ----------
     llm_architect : LLMClient  – frontier model client for the Architect agent
     llm_coder     : LLMClient  – code-specialised client for the Coder agent
+    llm_reviewer  : LLMClient  – code-review client for the Reviewer agent
     llm_debugger  : LLMClient  – mid-tier reasoning client for the Debugger agent
     db_path       : str        – SQLite path for the checkpointer; ":memory:" by default
     """
@@ -82,11 +85,15 @@ def build_graph(
     async def _coder(state: SwarmState) -> SwarmState:
         return await coder_node(state, llm_coder)
 
+    async def _reviewer(state: SwarmState) -> SwarmState:
+        return await reviewer_node(state, llm_reviewer)
+
     async def _debugger(state: SwarmState) -> SwarmState:
         return await debugger_node(state, llm_debugger)
 
     graph.register_node("architect", _architect)
     graph.register_node("coder",     _coder)
+    graph.register_node("reviewer",  _reviewer)
     graph.register_node("sandbox",   sandbox_node)
     graph.register_node("debugger",  _debugger)
 
@@ -105,6 +112,7 @@ def build_graph(
             {"mask": "0x000F", "value": "0x0002", "target_node": "coder"},
             {"mask": "0x000F", "value": "0x0003", "target_node": "sandbox"},
             {"mask": "0x000F", "value": "0x0004", "target_node": "debugger"},
+            {"mask": "0x000F", "value": "0x0005", "target_node": "reviewer"},
         ])
 
     return graph.compile()
@@ -115,6 +123,7 @@ async def run_task(
     workspace_root: str,
     llm_architect: LLMClient,
     llm_coder:     LLMClient,
+    llm_reviewer:  LLMClient,
     llm_debugger:  LLMClient,
     thread_id:     str = "default",
     db_path:       str = ":memory:",
@@ -154,7 +163,7 @@ async def run_task(
     log_path = recorder.start(thread_id=thread_id, log_dir="./debug_runs")
     log.info("Event log: %s", log_path)
 
-    graph       = build_graph(llm_architect, llm_coder, llm_debugger, db_path=db_path)
+    graph       = build_graph(llm_architect, llm_coder, llm_reviewer, llm_debugger, db_path=db_path)
     final_state = await graph.run(initial_state, thread_id)
 
     recorder.finish(final_state=final_state.model_dump())
@@ -174,13 +183,14 @@ if __name__ == "__main__":
         print("ERROR: Set the OPENROUTER_API_KEY environment variable.", file=sys.stderr)
         sys.exit(1)
     
-    # architect_model = os.environ.get("SOPHRON_ARCHITECT_MODEL", "z-ai/glm-5.2")
-    # coder_model     = os.environ.get("SOPHRON_CODER_MODEL",     "deepseek/deepseek-v4-pro")
-    # debugger_model  = os.environ.get("SOPHRON_DEBUGGER_MODEL",  "deepseek/deepseek-v4-flash")
-
-    architect_model = os.environ.get("SOPHRON_ARCHITECT_MODEL", "deepseek/deepseek-v4-flash")
-    coder_model     = os.environ.get("SOPHRON_CODER_MODEL",     "deepseek/deepseek-v4-flash")
+    architect_model = os.environ.get("SOPHRON_ARCHITECT_MODEL", "z-ai/glm-5.2")
+    coder_model     = os.environ.get("SOPHRON_CODER_MODEL",     "deepseek/deepseek-v4-pro")
+    reviewer_model  = os.environ.get("SOPHRON_REVIEWER_MODEL",  "deepseek/deepseek-v4-pro")
     debugger_model  = os.environ.get("SOPHRON_DEBUGGER_MODEL",  "deepseek/deepseek-v4-flash")
+
+    # architect_model = os.environ.get("SOPHRON_ARCHITECT_MODEL", "deepseek/deepseek-v4-flash")
+    # coder_model     = os.environ.get("SOPHRON_CODER_MODEL",     "deepseek/deepseek-v4-flash")
+    # debugger_model  = os.environ.get("SOPHRON_DEBUGGER_MODEL",  "deepseek/deepseek-v4-flash")
 
     workspace       = os.environ.get(
         "SOPHRON_WORKSPACE",
@@ -192,6 +202,7 @@ if __name__ == "__main__":
     # max_tokens=16384 ensures large multi-file diffs are not truncated mid-JSON
     architect_llm = OpenRouterClient(model=architect_model, api_key=openrouter_api_key, temperature=0.1, max_tokens=16384)
     coder_llm     = OpenRouterClient(model=coder_model,     api_key=openrouter_api_key, temperature=0.0, max_tokens=16384)
+    reviewer_llm  = OpenRouterClient(model=reviewer_model,  api_key=openrouter_api_key, temperature=0.0, max_tokens=16384)
     debugger_llm  = OpenRouterClient(model=debugger_model,  api_key=openrouter_api_key, temperature=0.0, max_tokens=16384)
 
     # ── Launch the debug replay server (background thread) ──────────────────
@@ -199,18 +210,19 @@ if __name__ == "__main__":
     start_debug_server(port=debug_port)
 
     # Example requirements document
-#     requirements_doc = """\
-# Build a simple web application that allows the user to connect their Schoology account via api key and allow the application to fetch the user's assignments, courses, and grades. The application should have a clean and user-friendly interface, and it should display the fetched data in an organized manner. The user should be able to filter assignments by course and due date, and the application should provide notifications for upcoming deadlines. Additionally, implement a feature that allows users to export their grades and assignments to a CSV file for offline access. Create a built in GPA calculator that calculates the user's GPA based on their grades and course credits. The application should be responsive and work well on both desktop and mobile devices. Ensure that the application follows best practices for security and data privacy, and provide clear instructions for users on how to connect their Schoology account and use the application's features.
-# """
     requirements_doc = """\
-Build a simple web based flappy bird game that allows the user to play the game and keep track of their high score. The game should have a clean and user-friendly interface, and it should display the user's current score and high score in an organized manner. The user should be able to start a new game, pause the game, and reset their high score. Additionally, implement a feature that allows users to share their high score on social media platforms. The game should be responsive and work well on both desktop and mobile devices. Ensure that the game follows best practices for performance and user experience, and provide clear instructions for users on how to play the game and use its features.
+Build a simple web application that allows the user to connect their Schoology account via api key and allow the application to fetch the user's assignments, courses, and grades. The application should have a clean and user-friendly interface, and it should display the fetched data in an organized manner. The user should be able to filter assignments by course and due date, and the application should provide notifications for upcoming deadlines. Additionally, implement a feature that allows users to export their grades and assignments to a CSV file for offline access. Create a built in GPA calculator that calculates the user's GPA based on their grades and course credits. The application should be responsive and work well on both desktop and mobile devices. Ensure that the application follows best practices for security and data privacy, and provide clear instructions for users on how to connect their Schoology account and use the application's features.
 """
+#     requirements_doc = """\
+# Build a simple web based flappy bird game that allows the user to play the game and keep track of their high score. The game should have a clean and user-friendly interface, and it should display the user's current score and high score in an organized manner. The user should be able to start a new game, pause the game, and reset their high score. Additionally, implement a feature that allows users to share their high score on social media platforms. The game should be responsive and work well on both desktop and mobile devices. Ensure that the game follows best practices for performance and user experience, and provide clear instructions for users on how to play the game and use its features.
+# """
     asyncio.run(
         run_task(
             requirements=requirements_doc,
             workspace_root=workspace,
             llm_architect=architect_llm,
             llm_coder=coder_llm,
+            llm_reviewer=reviewer_llm,
             llm_debugger=debugger_llm,
         )
     )

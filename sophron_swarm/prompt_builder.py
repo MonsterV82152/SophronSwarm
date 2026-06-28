@@ -49,7 +49,7 @@ class PromptBuilder:
         "  Bits 15-12  Language: 0000=shell  0001=python  0010=nodejs  0011=rust  0100=go  0101=cpp\n"
         "  Bits 11-8   Action:   0000=idle   0001=scaffold 0010=install_deps 0011=build 0100=test 0101=patch\n"
         "  Bits 7-4    Flags:    bit7=HALT   bit6=TEST_FAIL   bit5=BUILD_ERR   bit4=MUTATION\n"
-        "  Bits 3-0    Node:     0001=architect  0010=coder  0011=sandbox  0100=debugger\n"
+        "  Bits 3-0    Node:     0001=architect  0010=coder  0011=sandbox  0100=debugger  0101=reviewer\n"
     )
 
     def build(
@@ -103,6 +103,9 @@ class PromptBuilder:
             # Cap at 50 entries to avoid prompt inflation (spec §4.3 lazy access)
             capped = dict(list(state.workspace_tree.items())[:50])
             volatile_parts.append(f"\nWORKSPACE_TREE:\n{json.dumps(capped, indent=2)}")
+
+        if state.specification:
+            volatile_parts.append(f"\nARCHITECT_SPECIFICATION:\n{state.specification}")
 
         if state.shared_payload:
             volatile_parts.append(f"\nSHARED_PAYLOAD:\n{state.shared_payload}")

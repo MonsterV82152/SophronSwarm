@@ -62,14 +62,17 @@ IMPLEMENTATION ORDER:
      unified diff in shared_payload.  Concatenate one diff hunk per file.
   2. Create every file from /dev/null on your FIRST turn — do not waste turns
      requesting files that don't exist.
-  3. Set ACTION_PATCH=0x0500 and NODE_SANDBOX=0x0003 to apply the diff.
+  3. Set ACTION_PATCH=0x0500 and NODE_REVIEWER=0x0005 so the REVIEWER agent
+     checks your diff before it is applied.
   4. Only use requested_files to read EXISTING files before modifying them.
 
 Output bitmask_update:
   - Preserve language (bits 15-12).
   - Set ACTION_PATCH=0x0500 (bits 11-8).
-  - Set NODE_SANDBOX=0x0003 (bits 3-0) when ready to apply the patch.
-  Example for Node.js: "0x2503"
+  - Set NODE_REVIEWER=0x0005 (bits 3-0) when ready for review.
+  Example for Node.js: "0x2505"
+  NOTE: If SHARED_PAYLOAD contains reviewer feedback (not a spec), you are on
+  a correction turn — address every issue and resubmit to NODE_REVIEWER=0x0005.
 """
 
 _builder = PromptBuilder()
@@ -108,11 +111,11 @@ def _apply_response(state: SwarmState, response: dict) -> SwarmState:
             updates["bitmask"] = new_bitmask
         except (ValueError, TypeError):
             log.warning("Coder returned invalid bitmask_update: %r", bitmask_hex)
-            # Fallback: ACTION_PATCH + NODE_SANDBOX, preserve language
+            # Fallback: ACTION_PATCH + NODE_REVIEWER, preserve language
             updates["bitmask"] = (
                 (state.bitmask & BitMask.LANGUAGE_MASK)
                 | BitMask.ACTION_PATCH
-                | BitMask.NODE_SANDBOX
+                | BitMask.NODE_REVIEWER
             ) & 0xFFFF
 
     return state.model_copy(update=updates)

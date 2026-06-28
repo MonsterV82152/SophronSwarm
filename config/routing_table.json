@@ -55,6 +55,12 @@
       "value": "0x0004",
       "target_node": "debugger",
       "description": "Active node-ID = 0x4 (debugger)"
+    },
+    {
+      "mask": "0x000F",
+      "value": "0x0005",
+      "target_node": "reviewer",
+      "description": "Active node-ID = 0x5 (reviewer) – code-review gate"
     }
   ]
 }

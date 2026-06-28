@@ -70,6 +70,7 @@ class BitMask:
     NODE_CODER:     int = 0x0002
     NODE_SANDBOX:   int = 0x0003
     NODE_DEBUGGER:  int = 0x0004
+    NODE_REVIEWER:  int = 0x0005
 
     NODE_NAMES: dict[int, str] = {
         0x0: "none",
@@ -77,6 +78,7 @@ class BitMask:
         0x2: "coder",
         0x3: "sandbox",
         0x4: "debugger",
+        0x5: "reviewer",
     }
 
 
@@ -115,6 +117,14 @@ class SwarmState(BaseModel):
     project_requirements: str = Field(
         default="",
         description="Immutable user requirements text (prompt-cached at position 1).",
+    )
+    specification: str = Field(
+        default="",
+        description=(
+            "Persistent technical specification produced by the Architect. "
+            "Survives across turns so the Reviewer can check the Coder's "
+            "diff against it. Set once by the Architect, read by the Reviewer."
+        ),
     )
     failure_streak: int = Field(
         default=0,

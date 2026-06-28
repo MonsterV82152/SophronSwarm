@@ -71,6 +71,8 @@ def _apply_response(state: SwarmState, response: dict) -> SwarmState:
 
     if payload := response.get("shared_payload"):
         updates["shared_payload"] = payload
+        # Persist the spec so the Reviewer can check the Coder's diff against it.
+        updates["specification"] = payload
 
     if req := response.get("requested_files"):
         updates["requested_files"] = req
