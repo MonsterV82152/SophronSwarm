@@ -1,0 +1,60 @@
+{
+  "_description": "SophronSwarm declarative routing table (spec §3.2). Evaluated by BitmaskRouter – purely bitwise, no LLM logic.",
+  "_evaluation": "For each rule: next_node = target_node  if  (bitmask & mask) == value.  First matching rule wins.",
+  "routes": [
+    {
+      "mask": "0x0080",
+      "value": "0x0080",
+      "target_node": "__end__",
+      "description": "HALT flag (bit 7) set – terminate graph immediately"
+    },
+    {
+      "mask": "0x0010",
+      "value": "0x0010",
+      "target_node": "__end__",
+      "description": "MUTATION flag (bit 4) set – infinite-loop protection halt (spec §5.2)"
+    },
+    {
+      "mask": "0x0060",
+      "value": "0x0060",
+      "target_node": "debugger",
+      "description": "Both BUILD_ERR (bit 5) + TEST_FAIL (bit 6) set – route to debugger"
+    },
+    {
+      "mask": "0x0020",
+      "value": "0x0020",
+      "target_node": "debugger",
+      "description": "BUILD_ERR (bit 5) set – compilation failure, route to debugger"
+    },
+    {
+      "mask": "0x0040",
+      "value": "0x0040",
+      "target_node": "debugger",
+      "description": "TEST_FAIL (bit 6) set – test failure, route to debugger"
+    },
+    {
+      "mask": "0x000F",
+      "value": "0x0001",
+      "target_node": "architect",
+      "description": "Active node-ID = 0x1 (architect)"
+    },
+    {
+      "mask": "0x000F",
+      "value": "0x0002",
+      "target_node": "coder",
+      "description": "Active node-ID = 0x2 (coder)"
+    },
+    {
+      "mask": "0x000F",
+      "value": "0x0003",
+      "target_node": "sandbox",
+      "description": "Active node-ID = 0x3 (local sandbox)"
+    },
+    {
+      "mask": "0x000F",
+      "value": "0x0004",
+      "target_node": "debugger",
+      "description": "Active node-ID = 0x4 (debugger)"
+    }
+  ]
+}

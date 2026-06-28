@@ -1,0 +1,11 @@
+# SophronSwarm dependencies
+# Python 3.11+ required
+
+# Core runtime
+pydantic>=2.0.0          # SwarmState schema validation (v2 API)
+
+# Local sandbox execution
+docker>=7.0.0            # Docker SDK for Python (container execution)
+
+# Cloud LLM client (optional – only needed for OpenAICompatibleClient)
+openai>=1.0.0            # AsyncOpenAI client; compatible with any OpenAI-API endpoint

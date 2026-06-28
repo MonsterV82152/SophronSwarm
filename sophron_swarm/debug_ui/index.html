@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SophronSwarm Debug Replay</title>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --bg-card:   #161b22;
+    --bg-hover:  #1c2128;
+    --bg-input:  #0d1117;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --text-dim:  #8b949e;
+    --accent:    #58a6ff;
+    --accent-bg: rgba(88, 166, 255, 0.1);
+    --green:     #3fb950;
+    --red:       #f85149;
+    --yellow:    #d29922;
+    --purple:    #bc8cff;
+    --orange:    #db6d28;
+    --pink:      #f778ba;
+    --cyan:      #39d2c0;
+    --mono:      'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    --sans:      -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+  .header h1 .icon { margin-right: 6px; }
+  .header-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    background: var(--text-dim);
+  }
+  .status-dot.live { background: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+  .header-controls { display: flex; align-items: center; gap: 8px; }
+  .header-controls select {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: pointer;
+  }
+
+  /* ── Replay Toolbar ─────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 20px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .toolbar button {
+    background: var(--bg-hover);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: var(--sans);
+  }
+  .toolbar button:hover { background: var(--accent-bg); border-color: var(--accent); }
+  .toolbar button:disabled { opacity: 0.4; cursor: default; }
+  .toolbar button.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .toolbar button.primary:hover { background: #79b8ff; }
+  .toolbar .separator { width: 1px; height: 20px; background: var(--border); }
+  .toolbar .label { font-size: 12px; color: var(--text-dim); }
+  .toolbar input[type="range"] {
+    width: 120px; accent-color: var(--accent); cursor: pointer;
+  }
+  .toolbar .speed { font-family: var(--mono); font-size: 12px; color: var(--text-dim); min-width: 36px; }
+
+  /* ── Main Layout ────────────────────────────────────────────────────────── */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Timeline Sidebar ───────────────────────────────────────────────────── */
+  .timeline {
+    width: 340px;
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+  .timeline-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .iter-group { margin-bottom: 4px; }
+  .iter-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .iter-header:hover { background: var(--bg-hover); }
+  .iter-badge {
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+  .iter-node { color: var(--text); font-family: var(--mono); }
+  .iter-time { margin-left: auto; font-size: 10px; color: var(--text-dim); font-family: var(--mono); }
+
+  .event-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 4px 14px 4px 28px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background 0.1s;
+  }
+  .event-item:hover { background: var(--bg-hover); }
+  .event-item.active { background: var(--accent-bg); border-left-color: var(--accent); }
+  .event-icon {
+    width: 16px; height: 16px;
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .event-label { font-size: 12px; font-family: var(--mono); color: var(--text); line-height: 1.4; }
+  .event-sub { font-size: 10px; color: var(--text-dim); font-family: var(--mono); }
+
+  /* Icon color variants */
+  .ev-llm_request .event-icon   { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .ev-llm_response .event-icon  { background: rgba(188,140,255,0.15); color: var(--purple); }
+  .ev-iteration .event-icon     { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .ev-node_enter .event-icon    { background: rgba(57,210,192,0.15); color: var(--cyan); }
+  .ev-node_exit .event-icon     { background: rgba(63,185,80,0.15); color: var(--green); }
+  .ev-sandbox_dispatch .event-icon { background: rgba(247,120,186,0.15); color: var(--pink); }
+  .ev-node_error .event-icon    { background: rgba(248,81,73,0.15); color: var(--red); }
+  .ev-halt .event-icon          { background: rgba(248,81,73,0.2); color: var(--red); }
+  .ev-run_start .event-icon,
+  .ev-run_end .event-icon,
+  .ev-session_start .event-icon,
+  .ev-session_end .event-icon   { background: rgba(139,148,158,0.15); color: var(--text-dim); }
+
+  /* ── Detail Panel ───────────────────────────────────────────────────────── */
+  .detail {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 24px;
+  }
+  .detail-empty {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  /* ── Bitmask Visualizer ─────────────────────────────────────────────────── */
+  .bitmask-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .bitmask-card h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+  }
+  .bitmask-hex {
+    font-family: var(--mono);
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .bitmask-segments {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .bm-seg {
+    border-radius: 8px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .bm-seg .bm-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7; }
+  .bm-seg .bm-value { font-size: 16px; font-weight: 700; margin-top: 2px; font-family: var(--mono); }
+  .bm-seg .bm-bits { font-size: 10px; opacity: 0.6; margin-top: 2px; font-family: var(--mono); }
+  .bm-lang  { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.3); }
+  .bm-action{ background: rgba(210,153,34,0.12); border: 1px solid rgba(210,153,34,0.3); }
+  .bm-flags { background: rgba(63,185,80,0.12);  border: 1px solid rgba(63,185,80,0.3); }
+  .bm-node  { background: rgba(188,140,255,0.12);border: 1px solid rgba(188,140,255,0.3); }
+  .bm-flags.has-error { background: rgba(248,81,73,0.12); border-color: rgba(248,81,73,0.3); }
+
+  /* ── Content Cards ──────────────────────────────────────────────────────── */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+  .card-header h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .card-header .badge {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    background: var(--bg-hover);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .card-body { padding: 14px 16px; }
+  .card-body.collapsed { display: none; }
+
+  /* ── Message Blocks ─────────────────────────────────────────────────────── */
+  .msg-block {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .msg-role {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .msg-role.system    { color: var(--cyan); }
+  .msg-role.user      { color: var(--accent); }
+  .msg-role.assistant { color: var(--purple); }
+  .msg-role.tool      { color: var(--orange); }
+  .msg-content {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    color: var(--text);
+  }
+
+  /* ── Raw Response ───────────────────────────────────────────────────────── */
+  .raw-response {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+  .raw-response .json-key   { color: var(--accent); }
+  .raw-response .json-string{ color: var(--green); }
+  .raw-response .json-number{ color: var(--orange); }
+  .raw-response .diff-add   { color: var(--green); }
+  .raw-response .diff-del   { color: var(--red); }
+  .raw-response .diff-meta  { color: var(--purple); }
+
+  /* ── State Diff ─────────────────────────────────────────────────────────── */
+  .diff-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  .diff-table th {
+    text-align: left; padding: 6px 10px;
+    color: var(--text-dim); font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; text-transform: uppercase;
+  }
+  .diff-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    vertical-align: top;
+    word-break: break-word;
+  }
+  .diff-table .field { color: var(--accent); font-weight: 600; }
+  .diff-table .changed { background: rgba(210,153,34,0.05); }
+
+  /* ── Inline key-values ──────────────────────────────────────────────────── */
+  .kv { display: flex; gap: 8px; margin-bottom: 4px; font-size: 12px; font-family: var(--mono); }
+  .kv .k { color: var(--text-dim); min-width: 120px; }
+  .kv .v { color: var(--text); word-break: break-word; }
+
+  /* ── Status badges ──────────────────────────────────────────────────────── */
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+  .tag-ok    { background: rgba(63,185,80,0.15); color: var(--green); }
+  .tag-err   { background: rgba(248,81,73,0.15); color: var(--red); }
+  .tag-warn  { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .tag-info  { background: rgba(88,166,255,0.15); color: var(--accent); }
+
+  /* ── Scrollbars ─────────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  .playback-slider { display: flex; align-items: center; gap: 6px; }
+  .event-counter { font-family: var(--mono); font-size: 12px; color: var(--text-dim); min-width: 60px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1><span class="icon">🐝</span> SophronSwarm Debug Replay</h1>
+    <span class="header-status"><span class="status-dot" id="statusDot"></span><span id="statusText">Connecting…</span></span>
+  </div>
+  <div class="header-controls">
+    <label class="label" style="font-size:11px;color:var(--text-dim)">Run:</label>
+    <select id="runSelect" onchange="loadRun(this.value)">
+      <option value="">Latest</option>
+    </select>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button onclick="stepPrev()" title="Previous event">⏮ Prev</button>
+  <button class="primary" id="playBtn" onclick="togglePlay()" title="Play/Pause replay">▶ Play</button>
+  <button onclick="stepNext()" title="Next event">⏭ Next</button>
+  <div class="separator"></div>
+  <div class="playback-slider">
+    <span class="label">Step</span>
+    <input type="range" id="seekSlider" min="0" max="0" value="0" oninput="seekTo(this.value)">
+    <span class="event-counter" id="eventCounter">0 / 0</span>
+  </div>
+  <div class="separator"></div>
+  <span class="label">Speed</span>
+  <input type="range" id="speedSlider" min="200" max="3000" value="800" step="100" oninput="updateSpeed(this.value)">
+  <span class="speed" id="speedLabel">0.8s</span>
+</div>
+
+<div class="main">
+  <div class="timeline" id="timeline">
+    <div class="timeline-empty">Waiting for events…</div>
+  </div>
+  <div class="detail" id="detail">
+    <div class="detail-empty">Select an event to inspect</div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// State
+// ════════════════════════════════════════════════════════════════════════════
+let allEvents = [];
+let selectedSeq = -1;
+let isPlaying = false;
+let playInterval = null;
+let playSpeed = 800;
+let pollInterval = null;
+let lastSeqSeen = -1;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Bitmask decoder (mirrors sophron_swarm/state.py BitMask)
+// ════════════════════════════════════════════════════════════════════════════
+const LANG_NAMES = {0:'shell',1:'python',2:'nodejs',3:'rust',4:'go',5:'cpp'};
+const ACTION_NAMES = {0:'idle',1:'scaffold',2:'install_deps',3:'build',4:'test',5:'patch'};
+const NODE_NAMES = {0:'none',1:'architect',2:'coder',3:'sandbox',4:'debugger'};
+
+function decodeBitmask(bm) {
+  const lang   = (bm & 0xF000) >> 12;
+  const action = (bm & 0x0F00) >> 8;
+  const flags  = (bm & 0x00F0) >> 4;
+  const node   = bm & 0x000F;
+  const flagList = [];
+  if (flags & 0x8) flagList.push('HALT');
+  if (flags & 0x4) flagList.push('TEST_FAIL');
+  if (flags & 0x2) flagList.push('BUILD_ERR');
+  if (flags & 0x1) flagList.push('MUTATION');
+  return {
+    hex: '0x' + bm.toString(16).toUpperCase().padStart(4,'0'),
+    raw: bm,
+    lang, action, flags, node,
+    langName: LANG_NAMES[lang] || '?',
+    actionName: ACTION_NAMES[action] || '?',
+    nodeName: NODE_NAMES[node] || '?',
+    flagList: flagList,
+    flagText: flagList.length ? flagList.join('+') : 'OK',
+    hasError: !!(flags & 0xE),
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Event polling
+// ════════════════════════════════════════════════════════════════════════════
+async function fetchEvents() {
+  try {
+    const resp = await fetch(`/api/events?since=${lastSeqSeen}`);
+    const data = await resp.json();
+    if (data.events && data.events.length > 0) {
+      allEvents.push(...data.events);
+      lastSeqSeen = allEvents[allEvents.length - 1].seq;
+      renderTimeline();
+      updateSlider();
+      document.getElementById('statusText').textContent = data.log_file || 'Live';
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusDot').classList.remove('live');
+      // Re-check live status
+      const lastEv = allEvents[allEvents.length-1];
+      if (lastEv && (lastEv.type === 'session_end' || lastEv.type === 'run_end')) {
+        document.getElementById('statusText').textContent = 'Run complete';
+        document.getElementById('statusDot').classList.remove('live');
+      } else {
+        document.getElementById('statusText').textContent = (data.log_file || 'Live') + ' • streaming';
+        document.getElementById('statusDot').classList.add('live');
+      }
+    }
+  } catch(e) {
+    document.getElementById('statusText').textContent = 'Disconnected';
+    document.getElementById('statusDot').classList.remove('live');
+  }
+}
+
+async function loadRuns() {
+  try {
+    const resp = await fetch('/api/runs');
+    const data = await resp.json();
+    const sel = document.getElementById('runSelect');
+    sel.innerHTML = '<option value="">Latest</option>';
+    data.runs.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.file;
+      opt.textContent = r.file.replace('events_','').replace('.jsonl','') + ' (' + (r.size/1024).toFixed(1) + 'KB)';
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function loadRun(file) {
+  if (!file) {
+    // Reset to latest
+    allEvents = [];
+    lastSeqSeen = -1;
+    selectedSeq = -1;
+    renderTimeline();
+    renderDetail();
+    startPolling();
+    return;
+  }
+  // Tell server to switch file
+  await fetch('/api/load?file=' + encodeURIComponent(file));
+  allEvents = [];
+  lastSeqSeen = -1;
+  selectedSeq = -1;
+  stopPolling();
+  await fetchEvents(); // fetch all (since=-1)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Timeline rendering
+// ════════════════════════════════════════════════════════════════════════════
+const EVENT_ICONS = {
+  session_start:    '▶',
+  run_start:        '🚀',
+  iteration:        '⟳',
+  node_enter:       '→',
+  llm_request:      '📤',
+  llm_response:     '📥',
+  node_exit:        '←',
+  sandbox_dispatch: '⚙',
+  node_error:       '⚠',
+  halt:             '🛑',
+  run_end:          '🏁',
+  session_end:      '⏹',
+};
+
+const EVENT_LABELS = {
+  session_start:    'Session Start',
+  run_start:        'Run Start',
+  iteration:        'Iteration',
+  node_enter:       'Node Enter',
+  llm_request:      'LLM Request',
+  llm_response:     'LLM Response',
+  node_exit:        'Node Exit',
+  sandbox_dispatch: 'Sandbox',
+  node_error:       'Node Error',
+  halt:             'HALT',
+  run_end:          'Run End',
+  session_end:      'Session End',
+};
+
+function renderTimeline() {
+  const tl = document.getElementById('timeline');
+  if (allEvents.length === 0) {
+    tl.innerHTML = '<div class="timeline-empty">No events recorded yet</div>';
+    return;
+  }
+
+  // Group events by iteration
+  let html = '';
+  let currentIter = -1;
+  let iterEvents = [];
+  let iterNode = '';
+  let iterTime = '';
+
+  function flushIter() {
+    if (currentIter < 0) return;
+    html += `<div class="iter-group">`;
+    html += `<div class="iter-header" onclick="selectIteration(${iterEvents.length ? iterEvents[0].seq : -1})">
+      <span class="iter-badge">iter ${currentIter}</span>
+      <span class="iter-node">${iterNode}</span>
+      <span class="iter-time">${iterTime}</span>
+    </div>`;
+    for (const ev of iterEvents) {
+      const active = ev.seq === selectedSeq ? 'active' : '';
+      const icon = EVENT_ICONS[ev.type] || '•';
+      let sub = '';
+      if (ev.type === 'llm_request') sub = (ev.data.message_count || '?') + ' messages';
+      else if (ev.type === 'llm_response') sub = (ev.data.raw_length || '?') + ' chars';
+      else if (ev.type === 'sandbox_dispatch') {
+        const s = ev.data.result?.status || '';
+        const tag = s.startsWith('fail') || s === 'empty_payload' ? 'tag-err'
+                   : s.startsWith('patch_applied') || s.startsWith('exec_success') ? 'tag-ok'
+                   : 'tag-info';
+        sub = `<span class="tag ${tag}">${s}</span>`;
+      }
+      else if (ev.type === 'iteration') {
+        const bm = decodeBitmask(ev.data.bitmask || ev.bitmask || 0);
+        sub = bm.hex + ' → ' + bm.nodeName;
+      }
+      html += `<div class="event-item ev-${ev.type} ${active}" onclick="selectEvent(${ev.seq})">
+        <div class="event-icon">${icon}</div>
+        <div>
+          <div class="event-label">${EVENT_LABELS[ev.type] || ev.type}</div>
+          ${sub ? `<div class="event-sub">${sub}</div>` : ''}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  for (const ev of allEvents) {
+    if (ev.type === 'iteration') {
+      flushIter();
+      currentIter = ev.data.iteration ?? ev.iteration ?? -1;
+      iterNode = ev.data.node || ev.node || '';
+      iterTime = ev.timestamp ? ev.timestamp.split('T')[1].split('.')[0] : '';
+      iterEvents = [ev];
+    } else if (ev.type === 'session_start' || ev.type === 'run_start' ||
+               ev.type === 'run_end' || ev.type === 'session_end' || ev.type === 'halt') {
+      flushIter();
+      currentIter = -1;
+      iterEvents = [];
+      const active = ev.seq === selectedSeq ? 'active' : '';
+      const icon = EVENT_ICONS[ev.type] || '•';
+      html += `<div class="event-item ev-${ev.type} ${active}" onclick="selectEvent(${ev.seq})">
+        <div class="event-icon">${icon}</div>
+        <div><div class="event-label">${EVENT_LABELS[ev.type] || ev.type}</div></div>
+      </div>`;
+    } else {
+      iterEvents.push(ev);
+    }
+  }
+  flushIter();
+
+  tl.innerHTML = html;
+  // Auto-scroll to selected
+  const activeEl = tl.querySelector('.event-item.active');
+  if (activeEl) activeEl.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Detail rendering
+// ════════════════════════════════════════════════════════════════════════════
+function renderDetail() {
+  const el = document.getElementById('detail');
+  const ev = allEvents.find(e => e.seq === selectedSeq);
+
+  if (!ev) {
+    el.innerHTML = '<div class="detail-empty">Select an event from the timeline to inspect</div>';
+    return;
+  }
+
+  let html = '';
+
+  // Event header
+  html += `<div style="margin-bottom:16px">
+    <div style="font-size:12px;color:var(--text-dim);font-family:var(--mono)">${ev.timestamp}</div>
+    <div style="font-size:18px;font-weight:600;margin-top:2px">${EVENT_LABELS[ev.type] || ev.type}</div>
+  </div>`;
+
+  // ── Bitmask (for iteration and node_enter/node_exit events) ──
+  let bmValue = null;
+  if (ev.type === 'iteration') bmValue = ev.data.bitmask;
+  else if (ev.type === 'node_enter') bmValue = ev.data.state?.bitmask;
+  else if (ev.type === 'node_exit') bmValue = ev.data.state_after?.bitmask;
+  else if (ev.type === 'halt' || ev.type === 'run_end') bmValue = ev.data.bitmask || ev.data.final_bitmask;
+
+  if (bmValue !== null && bmValue !== undefined) {
+    html += renderBitmaskCard(bmValue);
+  }
+
+  // ── LLM Request ──
+  if (ev.type === 'llm_request') {
+    html += renderMessagesCard('LLM Request', ev.data.model, ev.data.messages);
+  }
+
+  // ── LLM Response ──
+  if (ev.type === 'llm_response') {
+    html += `<div class="card">
+      <div class="card-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+        <h3>LLM Response (raw) — ${ev.data.model || ''} — ${ev.data.raw_length || 0} chars</h3>
+        <span class="badge">${ev.node || ''}</span>
+      </div>
+      <div class="card-body">
+        <div class="raw-response" id="rawResp">${highlightContent(escapeHtml(ev.data.raw || ''))}</div>
+      </div>
+    </div>`;
+
+    if (ev.data.parsed) {
+      html += `<div class="card">
+        <div class="card-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+          <h3>Parsed Response (JSON)</h3>
+          <span class="badge">extract_response()</span>
+        </div>
+        <div class="card-body">
+          <div class="raw-response">${syntaxHighlightJson(ev.data.parsed)}</div>
+        </div>
+      </div>`;
+    }
+  }
+
+  // ── Sandbox dispatch ──
+  if (ev.type === 'sandbox_dispatch') {
+    const r = ev.data.result || {};
+    const statusTag = r.status && (r.status.includes('fail') || r.status === 'empty_payload') ? 'tag-err'
+                    : r.status && (r.status.includes('success') || r.status.includes('applied')) ? 'tag-ok'
+                    : 'tag-info';
+    html += `<div class="card">
+      <div class="card-header"><h3>Sandbox Execution</h3><span class="tag ${statusTag}">${r.status || '?'}</span></div>
+      <div class="card-body">
+        <div class="kv"><span class="k">language</span><span class="v">${ev.data.lang || '?'}</span></div>
+        <div class="kv"><span class="k">action</span><span class="v">${ev.data.action_hex || '?'}</span></div>
+        ${r.exit_code !== undefined ? `<div class="kv"><span class="k">exit_code</span><span class="v">${r.exit_code}</span></div>` : ''}
+        ${r.diff_content_length !== undefined ? `<div class="kv"><span class="k">diff_length</span><span class="v">${r.diff_content_length} chars</span></div>` : ''}
+        ${r.command ? `<div class="kv"><span class="k">command</span><span class="v">${escapeHtml(r.command)}</span></div>` : ''}
+      </div>
+    </div>`;
+    if (r.output) {
+      html += renderOutputCard('Sandbox Output', r.output);
+    }
+    if (r.diff_preview) {
+      html += renderOutputCard('Diff Content', r.diff_preview, true);
+    }
+  }
+
+  // ── Node Enter (state snapshot) ──
+  if (ev.type === 'node_enter' && ev.data.state) {
+    html += renderStateCard('State on Entry', ev.data.state);
+  }
+
+  // ── Node Exit (state diff) ──
+  if (ev.type === 'node_exit') {
+    if (ev.data.diff) {
+      html += renderDiffCard(ev.data.diff);
+    }
+    if (ev.data.state_after) {
+      html += renderStateCard('State after Node', ev.data.state_after);
+    }
+  }
+
+  // ── Node Error ──
+  if (ev.type === 'node_error') {
+    html += `<div class="card">
+      <div class="card-header"><h3>Node Error</h3><span class="tag tag-err">EXCEPTION</span></div>
+      <div class="card-body"><div class="raw-response" style="color:var(--red)">${escapeHtml(ev.data.error || '')}</div></div>
+    </div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function renderBitmaskCard(bmInt) {
+  const bm = decodeBitmask(bmInt);
+  const flagClass = bm.hasError ? 'has-error' : '';
+  return `<div class="bitmask-card">
+    <h3>Bitmask</h3>
+    <div class="bitmask-hex">${bm.hex}</div>
+    <div class="bitmask-segments">
+      <div class="bm-seg bm-lang">
+        <div class="bm-label">Language</div>
+        <div class="bm-value">${bm.langName}</div>
+        <div class="bm-bits">bits 15-12 = ${bm.lang.toString(16)}</div>
+      </div>
+      <div class="bm-seg bm-action">
+        <div class="bm-label">Action</div>
+        <div class="bm-value">${bm.actionName}</div>
+        <div class="bm-bits">bits 11-8 = ${bm.action.toString(16)}</div>
+      </div>
+      <div class="bm-seg bm-flags ${flagClass}">
+        <div class="bm-label">Flags</div>
+        <div class="bm-value">${bm.flagText}</div>
+        <div class="bm-bits">bits 7-4 = ${bm.flags.toString(16)}</div>
+      </div>
+      <div class="bm-seg bm-node">
+        <div class="bm-label">Active Node</div>
+        <div class="bm-value">${bm.nodeName}</div>
+        <div class="bm-bits">bits 3-0 = ${bm.node.toString(16)}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderMessagesCard(title, model, messages) {
+  if (!messages || messages.length === 0) return '';
+  let body = '';
+  for (const msg of messages) {
+    const role = msg.role || 'unknown';
+    body += `<div class="msg-block">
+      <div class="msg-role ${role}">${role}</div>
+      <div class="msg-content">${highlightContent(escapeHtml(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)))}</div>
+    </div>`;
+  }
+  return `<div class="card">
+    <div class="card-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+      <h3>${title} — ${model || ''} — ${messages.length} messages</h3>
+      <span class="badge">${messages.length} msgs</span>
+    </div>
+    <div class="card-body">${body}</div>
+  </div>`;
+}
+
+function renderStateCard(title, state) {
+  if (!state) return '';
+  const payload = state.shared_payload || '';
+  const payloadPreview = payload.length > 200 ? payload.substring(0, 200) + '…' : payload;
+  const tree = state.workspace_tree || {};
+  const treeCount = Object.keys(tree).length;
+
+  let body = '';
+  body += `<div class="kv"><span class="k">bitmask</span><span class="v">0x${(state.bitmask||0).toString(16).toUpperCase().padStart(4,'0')}</span></div>`;
+  body += `<div class="kv"><span class="k">failure_streak</span><span class="v">${state.failure_streak ?? 0}</span></div>`;
+  body += `<div class="kv"><span class="k">workspace_tree</span><span class="v">${treeCount} entries</span></div>`;
+  if (state.requested_files && state.requested_files.length) {
+    body += `<div class="kv"><span class="k">requested_files</span><span class="v">${state.requested_files.join(', ')}</span></div>`;
+  }
+  if (state.served_files && Object.keys(state.served_files).length) {
+    body += `<div class="kv"><span class="k">served_files</span><span class="v">${Object.keys(state.served_files).join(', ')}</span></div>`;
+  }
+  if (payload) {
+    body += `<div class="msg-block" style="margin-top:8px">
+      <div class="msg-role user">shared_payload (${payload.length} chars)</div>
+      <div class="msg-content">${highlightContent(escapeHtml(payloadPreview))}</div>
+    </div>`;
+  }
+
+  return `<div class="card">
+    <div class="card-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+      <h3>${title}</h3>
+      <span class="badge">${treeCount} files</span>
+    </div>
+    <div class="card-body">${body}</div>
+  </div>`;
+}
+
+function renderDiffCard(diff) {
+  const changed = Object.keys(diff.changed || {});
+  const added = Object.keys(diff.added || {});
+  const removed = Object.keys(diff.removed || {});
+
+  if (changed.length === 0 && added.length === 0 && removed.length === 0) {
+    return `<div class="card">
+      <div class="card-header"><h3>State Diff</h3><span class="badge">no changes</span></div>
+    </div>`;
+  }
+
+  let rows = '';
+  for (const k of changed) {
+    const before = formatValue(diff.changed[k].before);
+    const after = formatValue(diff.changed[k].after);
+    rows += `<tr class="changed">
+      <td class="field">${k}</td>
+      <td style="color:var(--red)">${before}</td>
+      <td style="color:var(--green)">${after}</td>
+    </tr>`;
+  }
+  for (const k of added) {
+    rows += `<tr>
+      <td class="field">${k}</td>
+      <td style="color:var(--text-dim)">—</td>
+      <td style="color:var(--green)">${formatValue(diff.added[k])}</td>
+    </tr>`;
+  }
+  for (const k of removed) {
+    rows += `<tr>
+      <td class="field">${k}</td>
+      <td style="color:var(--red)">${formatValue(diff.removed[k])}</td>
+      <td style="color:var(--text-dim)">—</td>
+    </tr>`;
+  }
+
+  return `<div class="card">
+    <div class="card-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+      <h3>State Diff (${changed.length + added.length + removed.length} fields changed)</h3>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="diff-table">
+        <tr><th>Field</th><th>Before</th><th>After</th></tr>
+        ${rows}
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderOutputCard(title, content, isDiff) {
+  return `<div class="card">
+    <div class="card-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+      <h3>${title}</h3>
+    </div>
+    <div class="card-body">
+      <div class="raw-response">${isDiff ? highlightDiff(escapeHtml(content)) : escapeHtml(content)}</div>
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Replay controls
+// ════════════════════════════════════════════════════════════════════════════
+function selectEvent(seq) {
+  selectedSeq = seq;
+  renderTimeline();
+  renderDetail();
+  updateSlider();
+}
+
+function selectIteration(firstSeq) {
+  if (firstSeq >= 0) selectEvent(firstSeq);
+}
+
+function stepNext() {
+  const idx = allEvents.findIndex(e => e.seq === selectedSeq);
+  if (idx < allEvents.length - 1) {
+    selectEvent(allEvents[idx + 1].seq);
+  } else if (allEvents.length > 0) {
+    selectEvent(allEvents[0].seq);
+  }
+}
+
+function stepPrev() {
+  const idx = allEvents.findIndex(e => e.seq === selectedSeq);
+  if (idx > 0) {
+    selectEvent(allEvents[idx - 1].seq);
+  }
+}
+
+function togglePlay() {
+  isPlaying = !isPlaying;
+  const btn = document.getElementById('playBtn');
+  if (isPlaying) {
+    btn.textContent = '⏸ Pause';
+    playInterval = setInterval(() => {
+      const idx = allEvents.findIndex(e => e.seq === selectedSeq);
+      if (idx < allEvents.length - 1) {
+        stepNext();
+      } else {
+        togglePlay(); // stop at end
+      }
+    }, playSpeed);
+  } else {
+    btn.textContent = '▶ Play';
+    if (playInterval) { clearInterval(playInterval); playInterval = null; }
+  }
+}
+
+function seekTo(val) {
+  const idx = parseInt(val);
+  if (idx >= 0 && idx < allEvents.length) {
+    selectEvent(allEvents[idx].seq);
+  }
+}
+
+function updateSlider() {
+  const slider = document.getElementById('seekSlider');
+  const counter = document.getElementById('eventCounter');
+  slider.max = Math.max(0, allEvents.length - 1);
+  const idx = allEvents.findIndex(e => e.seq === selectedSeq);
+  slider.value = idx >= 0 ? idx : 0;
+  counter.textContent = (idx >= 0 ? idx + 1 : 0) + ' / ' + allEvents.length;
+}
+
+function updateSpeed(val) {
+  playSpeed = parseInt(val);
+  document.getElementById('speedLabel').textContent = (playSpeed / 1000).toFixed(1) + 's';
+  if (isPlaying) { togglePlay(); togglePlay(); } // restart interval with new speed
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Polling lifecycle
+// ════════════════════════════════════════════════════════════════════════════
+function startPolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(fetchEvents, 1000);
+}
+
+function stopPolling() {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Utility: HTML escaping & syntax highlighting
+// ════════════════════════════════════════════════════════════════════════════
+function escapeHtml(text) {
+  if (text == null) return '';
+  const div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML;
+}
+
+function formatValue(val) {
+  if (val == null) return 'null';
+  if (typeof val === 'string') {
+    const s = val.length > 150 ? val.substring(0, 150) + '…' : val;
+    return escapeHtml(s);
+  }
+  if (typeof val === 'object') {
+    return escapeHtml(JSON.stringify(val));
+  }
+  return escapeHtml(String(val));
+}
+
+function highlightContent(text) {
+  // Highlight unified diff lines within any content
+  return text.replace(/^(\+\+\+ |--- |@@ )/gm, '<span class="diff-meta">$1</span>')
+             .replace(/^(\+[^+])/gm, '<span class="diff-add">$1</span>')
+             .replace(/^(-[^-])/gm, '<span class="diff-del">$1</span>');
+}
+
+function highlightDiff(text) {
+  return text.replace(/^(\+\+\+ |--- |@@ )/gm, '<span class="diff-meta">$1</span>')
+             .replace(/^(\+[^+])/gm, '<span class="diff-add">$1</span>')
+             .replace(/^(-[^-])/gm, '<span class="diff-del">$1</span>');
+}
+
+function syntaxHighlightJson(obj) {
+  let json = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+  json = escapeHtml(json);
+  return json.replace(/(&quot;[^&]*?&quot;)(\s*:)/g, '<span class="json-key">$1</span>$2')
+             .replace(/:\s*(&quot;[^&]*?&quot;)/g, ': <span class="json-string">$1</span>')
+             .replace(/:\s*(\d+)/g, ': <span class="json-number">$1</span>');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  loadRuns();
+  startPolling();
+  // Initial fetch
+  fetchEvents();
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') stepPrev();
+    else if (e.key === 'ArrowRight') stepNext();
+    else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  });
+});
+</script>
+</body>
+</html>
