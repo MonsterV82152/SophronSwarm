@@ -126,10 +126,30 @@ class SwarmState(BaseModel):
             "diff against it. Set once by the Architect, read by the Reviewer."
         ),
     )
+    project_name: str = Field(
+        default="",
+        description=(
+            "Name of the project subfolder the Architect chose. When set, the "
+            "Architect re-points workspace_root to <base_workspace>/<project_name> "
+            "so every generated file lives inside its own isolated project folder "
+            "instead of polluting the shared workspace root. Empty = use the "
+            "workspace_root as-is (legacy behaviour)."
+        ),
+    )
     failure_streak: int = Field(
         default=0,
         ge=0,
         description="Consecutive patch-fail counter; trips FLAG_MUTATION at threshold 5.",
+    )
+    incremental_mode: bool = Field(
+        default=False,
+        description=(
+            "When True, the coder is generating files one-per-turn. The sandbox "
+            "honours this by routing back to the coder after each successful "
+            "single-file patch (instead of proceeding to build). The coder clears "
+            "it once every spec file exists and routes to the reviewer. This keeps "
+            "per-turn LLM output bounded regardless of total project size."
+        ),
     )
     workspace_root: str = Field(
         default="/workspace",

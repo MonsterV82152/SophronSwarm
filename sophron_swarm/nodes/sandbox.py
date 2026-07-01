@@ -198,12 +198,27 @@ async def _handle_patch(state: SwarmState, lang: str) -> SwarmState:
         "exit_code": exit_code,
         "output": output[:500],
     })
-    new_bitmask = (
-        (state.bitmask & BitMask.LANGUAGE_MASK)  # keep language
-        | BitMask.ACTION_BUILD                    # proceed to build
-        | BitMask.NODE_SANDBOX                    # stay in sandbox
-        # error flags intentionally cleared
-    ) & 0xFFFF
+
+    # Incremental generation: route back to the coder so it can emit the next
+    # file. The coder clears incremental_mode and routes to the reviewer once
+    # every spec file exists. Keep language + ACTION_PATCH (sandbox will apply
+    # the next file's diff), route to NODE_CODER.
+    if state.incremental_mode:
+        log.info("Incremental mode – returning control to coder for next file.")
+        new_bitmask = (
+            (state.bitmask & BitMask.LANGUAGE_MASK)
+            | BitMask.ACTION_PATCH
+            | BitMask.NODE_CODER
+        ) & 0xFFFF
+    else:
+        # Non-incremental path (debugger/reviewer fix): proceed to build.
+        new_bitmask = (
+            (state.bitmask & BitMask.LANGUAGE_MASK)
+            | BitMask.ACTION_BUILD
+            | BitMask.NODE_SANDBOX
+            # error flags intentionally cleared
+        ) & 0xFFFF
+
     return state.model_copy(update={
         "bitmask":        new_bitmask,
         "workspace_tree": workspace.scan_tree(),
@@ -713,13 +728,26 @@ def _is_valid_unified_diff(content: str) -> bool:
 
 
 def _failure_state(state: SwarmState, flag: int, payload: str) -> SwarmState:
-    """Build a failure state routing to the Debugger."""
-    new_bitmask = (
-        (state.bitmask & BitMask.LANGUAGE_MASK)
-        | BitMask.ACTION_PATCH
-        | flag
-        | BitMask.NODE_DEBUGGER
-    ) & 0xFFFF
+    """
+    Build a failure state.
+
+    In incremental mode, a patch failure routes back to the CODER (so it can
+    retry the single file with a corrected diff) instead of the debugger — the
+    debugger is for build/test failures, not for malformed diffs mid-generation.
+    """
+    if state.incremental_mode and flag == BitMask.FLAG_BUILD_ERR:
+        new_bitmask = (
+            (state.bitmask & BitMask.LANGUAGE_MASK)
+            | BitMask.ACTION_PATCH
+            | BitMask.NODE_CODER
+        ) & 0xFFFF
+    else:
+        new_bitmask = (
+            (state.bitmask & BitMask.LANGUAGE_MASK)
+            | BitMask.ACTION_PATCH
+            | flag
+            | BitMask.NODE_DEBUGGER
+        ) & 0xFFFF
     return state.model_copy(update={
         "bitmask":        new_bitmask,
         "shared_payload": payload,

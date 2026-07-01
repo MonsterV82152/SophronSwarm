@@ -30,49 +30,51 @@ log = logging.getLogger(__name__)
 _ADDENDUM = """\
 You are the CODER agent.
 
-Your job is to implement the specification provided in SHARED_PAYLOAD.
+Your job is to implement the specification provided in SHARED_PAYLOAD or, if
+SHARED_PAYLOAD contains reviewer feedback, address that feedback.
 
 IMPORTANT: WORKSPACE_TREE is metadata only.  Files listed there may NOT exist
 on disk yet.  If REQUESTED_FILE_CONTENTS shows "(file does not exist on disk)"
 for a path, that file has never been created — you MUST create it from scratch.
 
-STRICT CONSTRAINTS:
-- You MUST NEVER rewrite entire files.
+PROJECT FOLDER: If CURRENT_PROJECT_FOLDER is set, ALL file paths you emit
+(requested_files, diff headers, workspace_tree_update) are RELATIVE TO that
+folder.  Do NOT prefix paths with the project folder name.
+
+═══════════════════════════════════════════════════════════════════════════
+INCREMENTAL GENERATION (one file per turn) — avoids output-token truncation.
+═══════════════════════════════════════════════════════════════════════════
+You MUST implement ONE file per turn.  Never attempt to emit the entire project
+in a single turn — it will be truncated.  Each turn:
+  1. Compare the ARCHITECT_SPECIFICATION's file list against the WORKSPACE_TREE
+     (which is re-scanned after every patch, so just-created files appear).
+  2. Pick exactly ONE not-yet-existing file from the spec and implement ONLY it
+     as a single new-file diff (from /dev/null).
+  3. Set ACTION_PATCH=0x0500 and NODE_SANDBOX=0x0003 so the sandbox applies it.
+  4. On the NEXT turn the sandbox will have applied your file and returned control
+     to you with an updated WORKSPACE_TREE.  Repeat for the next missing file.
+  5. When EVERY file the spec requires already exists in WORKSPACE_TREE, you are
+     DONE: set NODE_REVIEWER=0x0005 (bits 3-0), action 0000 (idle), and put a
+     one-line summary like "All N files implemented." in shared_payload.
+
+DIFF FORMAT (strict):
+- You MUST NEVER rewrite entire existing files.
 - All code changes must be expressed in standard Unified Diff format:
-    --- a/path/to/file
+    --- /dev/null            (for new files)
     +++ b/path/to/file
-    @@ -start,count +start,count @@
-     context line
-    -removed line
-    +added line
-- Place the complete unified diff in shared_payload.
-- Do NOT request files that don't exist yet.  Only request files you need to
-  READ before EDITING.  For a new project, CREATE the files directly.
-
-CREATING NEW FILES (when the file does not exist yet on disk):
-  Use /dev/null as the source (---) line.  Example:
-    --- /dev/null
-    +++ b/index.html
     @@ -0,0 +1,N @@
-    +<entire file content, one + line per source line>
-  IMPORTANT: Strip leading slashes from file paths.  Use "index.html", not "/index.html".
+    +<file content, one + line per source line>
+- Place the diff for the single file in shared_payload.
+- Strip leading slashes from file paths.  Use "index.html", not "/index.html".
 
-IMPLEMENTATION ORDER:
-  1. Implement ALL files specified in SHARED_PAYLOAD as a single combined
-     unified diff in shared_payload.  Concatenate one diff hunk per file.
-  2. Create every file from /dev/null on your FIRST turn — do not waste turns
-     requesting files that don't exist.
-  3. Set ACTION_PATCH=0x0500 and NODE_REVIEWER=0x0005 so the REVIEWER agent
-     checks your diff before it is applied.
-  4. Only use requested_files to read EXISTING files before modifying them.
+CORRECTION TURNS: If SHARED_PAYLOAD contains reviewer feedback (not a spec),
+address every issue by emitting a corrective diff for the affected file(s),
+then route back to NODE_REVIEWER=0x0005.
 
 Output bitmask_update:
-  - Preserve language (bits 15-12).
-  - Set ACTION_PATCH=0x0500 (bits 11-8).
-  - Set NODE_REVIEWER=0x0005 (bits 3-0) when ready for review.
-  Example for Node.js: "0x2505"
-  NOTE: If SHARED_PAYLOAD contains reviewer feedback (not a spec), you are on
-  a correction turn — address every issue and resubmit to NODE_REVIEWER=0x0005.
+  - For each new file:     preserve language, set 0x0500 (ACTION_PATCH + NODE_SANDBOX).
+  - When all files exist:  preserve language, set 0x0002 (NODE_CODER, action idle)
+                           is WRONG — set NODE_REVIEWER: example Node.js "0x2005".
 """
 
 _builder = PromptBuilder()
@@ -102,20 +104,41 @@ def _apply_response(state: SwarmState, response: dict) -> SwarmState:
     if bitmask_hex := response.get("bitmask_update"):
         try:
             agent_mask = int(bitmask_hex, 16) if isinstance(bitmask_hex, str) else int(bitmask_hex)
+            target_node = agent_mask & BitMask.NODE_MASK
+            target_action = agent_mask & BitMask.ACTION_MASK
+
+            # Defensive guard: if the coder emits a diff (ACTION_PATCH) but sets
+            # the node-ID to 0x0 (none) — a common model slip — force it to
+            # NODE_SANDBOX. A patch MUST go to the sandbox to be applied; node-ID
+            # 0x0 has no routing rule and would silently terminate the run.
+            if target_action == BitMask.ACTION_PATCH and target_node == 0x0:
+                log.warning(
+                    "Coder emitted ACTION_PATCH with node-ID 0x0 (none) — "
+                    "correcting to NODE_SANDBOX (0x3) to avoid silent termination."
+                )
+                target_node = BitMask.NODE_SANDBOX
+
             new_bitmask = (
                 (state.bitmask & BitMask.STATUS_MASK)
                 | (agent_mask  & BitMask.LANGUAGE_MASK)
                 | (agent_mask  & BitMask.ACTION_MASK)
-                | (agent_mask  & BitMask.NODE_MASK)
+                | target_node
             ) & 0xFFFF
             updates["bitmask"] = new_bitmask
+            # Drive the incremental loop: emit one file at a time to the sandbox,
+            # which routes back to us until we're done, then hand off to the reviewer.
+            if target_node == BitMask.NODE_SANDBOX:
+                updates["incremental_mode"] = True
+            elif target_node == BitMask.NODE_REVIEWER:
+                updates["incremental_mode"] = False
         except (ValueError, TypeError):
             log.warning("Coder returned invalid bitmask_update: %r", bitmask_hex)
-            # Fallback: ACTION_PATCH + NODE_REVIEWER, preserve language
+            # Fallback: ACTION_PATCH + NODE_SANDBOX (start incremental loop)
             updates["bitmask"] = (
                 (state.bitmask & BitMask.LANGUAGE_MASK)
                 | BitMask.ACTION_PATCH
-                | BitMask.NODE_REVIEWER
+                | BitMask.NODE_SANDBOX
             ) & 0xFFFF
+            updates["incremental_mode"] = True
 
     return state.model_copy(update=updates)

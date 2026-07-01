@@ -104,6 +104,13 @@ class PromptBuilder:
             capped = dict(list(state.workspace_tree.items())[:50])
             volatile_parts.append(f"\nWORKSPACE_TREE:\n{json.dumps(capped, indent=2)}")
 
+        if state.project_name:
+            volatile_parts.append(
+                f"\nCURRENT_PROJECT_FOLDER: {state.project_name}\n"
+                "All file paths in WORKSPACE_TREE, requested_files, and unified "
+                "diffs are relative to this folder."
+            )
+
         if state.specification:
             volatile_parts.append(f"\nARCHITECT_SPECIFICATION:\n{state.specification}")
 

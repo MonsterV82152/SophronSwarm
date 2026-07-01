@@ -42,7 +42,7 @@ class StateGraph:
     no LLM routing decisions are made inside this class (spec §4.1).
     """
 
-    MAX_ITERATIONS: int = 64  # absolute upper-bound; prevents runaway billing
+    MAX_ITERATIONS: int = 128  # absolute upper-bound; prevents runaway billing
 
     def __init__(
         self,

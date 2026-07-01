@@ -77,8 +77,17 @@ class WorkspaceManager:
         try:
             for item in sorted(self.root.rglob("*")):
                 parts = item.relative_to(self.root).parts
-                # Skip excluded directories at any depth
-                if any(p.startswith(".") or p in _EXCLUDED_DIRS for p in parts):
+                # Skip excluded directories at any depth, plus any *parent*
+                # directory that starts with a dot (.git, .venv, etc.).
+                # IMPORTANT: do NOT exclude the final component if it is a dotFILE
+                # (.env.example, .gitignore, .eslintrc, .babelrc, ...) — those are
+                # legitimate project files the agents must see, or the coder will
+                # recreate them forever. Dot-DIRECTORIES (.git, .venv) are hidden.
+                parent_parts = parts[:-1]
+                if any(p in _EXCLUDED_DIRS or p.startswith(".") for p in parent_parts):
+                    continue
+                # Hide dot-directories themselves (.git, .venv) but show dotfiles
+                if item.is_dir() and item.name.startswith("."):
                     continue
                 # Skip excluded filenames
                 if item.name in _EXCLUDED_NAMES:
