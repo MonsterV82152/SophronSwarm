@@ -11,6 +11,7 @@
 import { log } from "../util/log.js";
 import type { AgentDefinition, AgentRunState, ToolCall, ToolResult } from "../types.js";
 import { ToolRegistry } from "./registry.js";
+import type { SharedServices } from "./schema.js";
 
 /** A permission decision for a tool invocation. */
 export type PermissionDecision = "allow" | "deny" | "prompt";
@@ -74,6 +75,7 @@ export class ToolDispatcher {
     call: ToolCall,
     agent: AgentDefinition,
     state: AgentRunState,
+    services?: SharedServices,
   ): Promise<ToolResult> {
     const name = call.function.name;
 
@@ -112,7 +114,7 @@ export class ToolDispatcher {
 
     // ── Execute (tool errors are surfaced to the model, never thrown) ──────
     try {
-      const out = await spec.handler({ args, agent, state });
+      const out = await spec.handler({ args, agent, state, services: services! });
       const content = typeof out === "string" ? out : JSON.stringify(out);
       log.debug({ tool: name, chars: content.length }, "tool ok");
       return { tool_call_id: call.id, content };

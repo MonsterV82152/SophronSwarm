@@ -1,8 +1,6 @@
 /**
- * Built-in tools for Phase 0: echo, read_file, write_file, list_dir.
- *
- * These run bound to state.workingDir with the path-traversal guard. Real
- * isolation (run_command + bubblewrap) arrives in Phase 1.
+ * Built-in tools: echo, read_file, write_file, list_dir, run_command,
+ * apply_patch, delegate.
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, relative, join } from "node:path";
@@ -10,6 +8,7 @@ import type { ToolSpec } from "../schema.js";
 import { safeResolve } from "./paths.js";
 import { run_command } from "./run_command.js";
 import { apply_patch } from "./apply_patch.js";
+import { delegate } from "./delegate.js";
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
@@ -96,4 +95,4 @@ export const list_dir: ToolSpec = {
   },
 };
 
-export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch];
+export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate];

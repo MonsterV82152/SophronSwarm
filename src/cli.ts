@@ -18,12 +18,15 @@ import { Checkpointer } from "./state/checkpointer.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
+import type { SharedServices } from "./tools/schema.js";
 
-function buildRegistry(): { tools: ToolRegistry; dispatcher: ToolDispatcher } {
-  const tools = new ToolRegistry();
-  for (const t of BUILTIN_TOOLS) tools.register(t);
-  const dispatcher = new ToolDispatcher(tools);
-  return { tools, dispatcher };
+function buildServices(workingDir: string, registry: AgentRegistry): SharedServices {
+  const toolRegistry = new ToolRegistry();
+  for (const t of BUILTIN_TOOLS) toolRegistry.register(t);
+  const llm = new LLMClient();
+  const dispatcher = new ToolDispatcher(toolRegistry);
+  const checkpointer = new Checkpointer(resolve(workingDir, ".sophron", "checkpoint.db"));
+  return { llm, agentRegistry: registry, toolRegistry, dispatcher, checkpointer };
 }
 
 export async function runCli(argv: string[]): Promise<void> {
@@ -60,19 +63,18 @@ export async function runCli(argv: string[]): Promise<void> {
         console.warn(chalk.yellow(`Warning: agent roster (${scan.agents.length}) exceeds soft cap of 12.`));
       }
 
-      // ── Wire dependencies ────────────────────────────────────────────────
-      const { dispatcher } = buildRegistry();
-      const llm = new LLMClient();
-      const checkpointer = new Checkpointer(resolve(workingDir, ".sophron", "checkpoint.db"));
+      // ── Wire dependencies ──────────────────────────────────────────────
+      const services = buildServices(workingDir, registry);
 
       try {
         const { state } = await runAgent({
           agent: def,
           task,
           workingDir,
-          llm,
-          dispatcher,
-          checkpointer,
+          llm: services.llm,
+          dispatcher: services.dispatcher,
+          checkpointer: services.checkpointer,
+          services,
         });
 
         // ── Print result ──────────────────────────────────────────────────

@@ -215,16 +215,16 @@ Codex and Claude Code are CLI-first; SwarmClaw is web-first. Given your goals (i
 
 ## 8. Proposed Phasing
 
-| Phase | Deliverable |
-|---|---|
-| **0 — Skeleton** | Agentic loop + tool dispatcher + declarative agent loader + checkpointer/recorder (port from V2). |
-| **1 — Live tools + sandbox** | `read/write/edit/grep/glob/run_command/apply_patch` under Landlock + dangerous-command blocker. |
-| **2 — Delegation** | `delegate` tool, policy table, concurrency caps, join policies, cycle detection. |
-| **3 — Memory** | Per-agent (`MEMORY.md` + `remember`), shared (`.sophron/shared/`), handoff packets. |
-| **4 — MCP** | Lazy loader + `mcp_tool_search` + token-cost meter + connection pool. |
-| **5 — CLI/TUI + web UI** | Panels, slash-commands, approvals desk; promote V2 debug UI. |
-| **6 — Auto mode + agent-creation** | Classifier-based auto permission; `propose_agent` draft→approve. |
-| **7 — Specialization kits** | Starter agent packs (design/security/feature/orchestrator). |
+| Phase | Deliverable | Status |
+|---|---|---|
+| **0 — Skeleton** | Agentic loop + tool dispatcher + declarative agent loader + checkpointer/recorder (port from V2). | ✅ [COMPLETE](PHASE_0_COMPLETE.md) |
+| **1 — Live tools + sandbox** | `run_command` / `apply_patch` under bubblewrap + dangerous-command blocker. | ✅ [COMPLETE](PHASE_1_COMPLETE.md) |
+| **2 — Delegation** | `delegate` tool, depth limit, cycle detection, allowlist, isolated context, HandoffPacket, recorder stack. | ✅ [COMPLETE](PHASE_2_COMPLETE.md) |
+| **3 — Memory** | Per-agent (`MEMORY.md` + `remember`), shared (`.sophron/shared/`), handoff packets to shared memory. | 🔜 next |
+| **4 — MCP** | Lazy loader + `mcp_tool_search` + token-cost meter + connection pool. | — |
+| **5 — CLI/TUI + web UI** | Ink TUI panels, slash-commands, approvals desk; promote V2 debug UI to Next.js. | — |
+| **6 — Auto mode + agent-creation** | Classifier-based auto permission; `propose_agent` draft→approve. | — |
+| **7 — Specialization kits** | Starter agent packs (design/security/feature/orchestrator). | — |
 
 ---
 
@@ -279,4 +279,4 @@ V2 was Python. For V3's stated priorities (**strong front-end + speed**, multi-a
 1. **Ollama classifier model name** — pick a small local model (e.g. `qwen2.5:1.5b`, `llama3.2:1b`, or `gemma2:2b`) for the auto-mode command vetting.
 2. **Default permission mode for the bootstrap-approved agents** — `default` (prompt) for the cautious start, or `accept-edits` to reduce friction?
 
-All major architectural and stack decisions are now locked (see §9). Proceeding to Phase 0 design — see `docs/PHASE_0_DESIGN.md`.
+All major architectural and stack decisions are now locked (see §9). Phases 0–2 complete — see individual design and completion docs under `docs/`.

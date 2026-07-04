@@ -139,6 +139,44 @@ export interface AgentRunState {
   error?: string;
   /** Checkpointer sequence number (set by Checkpointer.save). */
   seq?: number;
+  /** Set when this run was spawned by a parent agent. */
+  delegationCtx?: DelegationContext;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+// ── Delegation ─────────────────────────────────────────────────────────────
+
+/**
+ * Delegation context injected into sub-agent runs. Tracks the ancestry chain
+ * for cycle detection and the current depth for the hard depth limit.
+ */
+export interface DelegationContext {
+  parentRunId: string;
+  parentThreadId: string;
+  /** Depth in the delegation tree. 0 = main session, 1 = first delegate, … */
+  depth: number;
+  /** Agent names in the current call chain, oldest first (for cycle detection). */
+  ancestry: string[];
+}
+
+/**
+ * Concise structured result a sub-agent returns to its parent (not the full
+ * transcript). The parent's context receives only this — sub-agent verbosity
+ * is isolated.
+ */
+export interface HandoffPacket {
+  agentName: string;
+  task: string;
+  status: RunStatus;
+  outcome: "success" | "failure" | "halted";
+  /** The sub-agent's final assistant message (the actionable summary). */
+  summary: string;
+  /** Files written or patched during the run. */
+  filesChanged: string[];
+  turns: number;
+  tokenUsage: Usage;
+  error?: string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

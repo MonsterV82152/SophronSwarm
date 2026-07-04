@@ -57,9 +57,17 @@ const MAX_PREVIEW = 500;
 class Recorder {
   private filePath: string | null = null;
   private initialized = false;
+  /** Stack for nested (delegated) runs — saves/restores parent file path. */
+  private fileStack: Array<{ filePath: string | null; initialized: boolean }> = [];
 
-  /** Open a fresh JSONL file for a run. Idempotent for the same runId. */
+  /**
+   * Open a fresh JSONL file for a run.
+   * When called inside an already-open run (delegation), the current context
+   * is pushed onto a stack and restored when `closeRun()` is called.
+   */
   openForRun(runId: string): string {
+    // Save current context before overwriting (supports nested sub-agent runs).
+    this.fileStack.push({ filePath: this.filePath, initialized: this.initialized });
     const dir = "runs";
     try {
       mkdirSync(dir, { recursive: true });
@@ -70,6 +78,18 @@ class Recorder {
     this.filePath = `${dir}/events_${ts}_${runId.slice(0, 8)}.jsonl`;
     this.initialized = true;
     return this.filePath;
+  }
+
+  /**
+   * Close the current run's JSONL context and restore the parent's context
+   * (if we were inside a delegated sub-agent run).
+   */
+  closeRun(): void {
+    const prev = this.fileStack.pop();
+    if (prev !== undefined) {
+      this.filePath = prev.filePath;
+      this.initialized = prev.initialized;
+    }
   }
 
   /** Append one event. Silently drops if no file is open. */

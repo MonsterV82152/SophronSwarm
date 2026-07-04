@@ -22,7 +22,11 @@ import { ToolDispatcher } from "../tools/dispatcher.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { Checkpointer } from "../state/checkpointer.js";
 import { recorder } from "../state/recorder.js";
-import { addUsage, EMPTY_USAGE, type AgentDefinition, type AgentRunState, type LLMMessage } from "../types.js";
+import type { SharedServices } from "../tools/schema.js";
+import {
+  addUsage, EMPTY_USAGE,
+  type AgentDefinition, type AgentRunState, type DelegationContext, type LLMMessage,
+} from "../types.js";
 
 export const DEFAULT_MAX_TURNS = 32;
 
@@ -33,13 +37,22 @@ export interface RunOptions {
   llm: LLMClient;
   dispatcher: ToolDispatcher;
   checkpointer: Checkpointer;
+  /** Shared services threaded into every tool call (required for delegation). */
+  services: SharedServices;
+  /** Delegation context set when this run is a sub-agent. */
+  delegationCtx?: DelegationContext;
   /** Shared-memory blocks (Phase 3). Keys = section titles. */
   sharedMemory?: Map<string, string>;
   /** Override the default max-turns cap. */
   maxTurns?: number;
 }
 
-function initRunState(agent: AgentDefinition, task: string, workingDir: string): AgentRunState {
+function initRunState(
+  agent: AgentDefinition,
+  task: string,
+  workingDir: string,
+  delegationCtx?: DelegationContext,
+): AgentRunState {
   const runId = randomUUID();
   const threadId = randomUUID();
   return {
@@ -53,6 +66,7 @@ function initRunState(agent: AgentDefinition, task: string, workingDir: string):
     workingDir,
     tokenUsage: { ...EMPTY_USAGE },
     startedAt: Date.now(),
+    delegationCtx,
   };
 }
 
@@ -67,11 +81,11 @@ export interface RunResult {
  * (transient ones are retried inside the client).
  */
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
-  const { agent, task, workingDir, llm, dispatcher, checkpointer, sharedMemory } = opts;
+  const { agent, task, workingDir, llm, dispatcher, checkpointer, sharedMemory, services } = opts;
   const maxTurns = opts.maxTurns ?? agent.maxTurns ?? DEFAULT_MAX_TURNS;
 
   const promptBuilder = new PromptBuilder();
-  const state = initRunState(agent, task, workingDir);
+  const state = initRunState(agent, task, workingDir, opts.delegationCtx);
   const messages: LLMMessage[] = promptBuilder.build(agent, task, { workingDir, sharedMemory });
   state.messages = messages;
 
@@ -124,7 +138,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
 
       for (const call of response.toolCalls) {
         recorder.recordToolCallStart(call, state.runId, state.turn);
-        const result = await dispatcher.dispatch(call, agent, state);
+        const result = await dispatcher.dispatch(call, agent, state, services);
         messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -152,6 +166,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     state.endedAt = Date.now();
     recorder.recordRunEnd(state);
     checkpointer.save(state);
+    // Restore the parent run's recorder context (no-op when this is the top-level run).
+    recorder.closeRun();
     log.info(
       { agent: agent.name, runId: state.runId, status: state.status, turns: state.turn + 1, usage: state.tokenUsage },
       "run end",

@@ -5,6 +5,19 @@
  */
 import type { ToolDefinition } from "../types.js";
 
+/**
+ * Shared infrastructure instances passed to every tool invocation.
+ * Created once at CLI level and threaded through the loop so delegation tools
+ * can spawn sub-agents without re-constructing expensive objects.
+ */
+export interface SharedServices {
+  llm: import("../llm/client.js").LLMClient;
+  agentRegistry: import("../agent/registry.js").AgentRegistry;
+  toolRegistry: import("./registry.js").ToolRegistry;
+  dispatcher: import("./dispatcher.js").ToolDispatcher;
+  checkpointer: import("../state/checkpointer.js").Checkpointer;
+}
+
 export interface ToolContext {
   /** Parsed arguments object from the model. */
   args: Record<string, unknown>;
@@ -12,6 +25,8 @@ export interface ToolContext {
   agent: import("../types.js").AgentDefinition;
   /** Current run state (working dir, run id, etc). */
   state: import("../types.js").AgentRunState;
+  /** Shared infrastructure — available to tools that need to spawn sub-agents. */
+  services: SharedServices;
 }
 
 export type ToolHandler = (ctx: ToolContext) => Promise<string> | string;
