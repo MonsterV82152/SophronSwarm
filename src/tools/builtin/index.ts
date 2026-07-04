@@ -8,6 +8,8 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSy
 import { dirname, relative, join } from "node:path";
 import type { ToolSpec } from "../schema.js";
 import { safeResolve } from "./paths.js";
+import { run_command } from "./run_command.js";
+import { apply_patch } from "./apply_patch.js";
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
@@ -94,4 +96,4 @@ export const list_dir: ToolSpec = {
   },
 };
 
-export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir];
+export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch];

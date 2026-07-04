@@ -16,18 +16,45 @@ import { ToolRegistry } from "./registry.js";
 export type PermissionDecision = "allow" | "deny" | "prompt";
 
 /**
- * Permission gate. Phase 0: a stub that logs and allows everything (no real
- * sandbox or prompts yet). Phase 6 replaces this with the auto-mode
- * classifier + interactive prompts.
+ * Permission gate. Decides allow/deny/prompt per (tool, agent.permissionMode).
+ *
+ * The dangerous-command blocker runs INSIDE run_command (not here) so it always
+ * applies regardless of mode. This gate only handles mode-based routing.
+ *
+ * Phase 6 replaces the "prompt" return with the auto-mode classifier + an
+ * interactive prompt UI. For now (Phase 1) prompts degrade to allow+log since
+ * there's no UI to surface them.
+ *
+ * See docs/PHASE_1_DESIGN.md §4.
  */
 export interface PermissionGate {
   check(toolName: string, args: unknown, agent: AgentDefinition): Promise<PermissionDecision>;
 }
 
-/** Phase-0 default gate: allow everything, log risky-looking calls. */
+/** Tools that mutate the filesystem or execute shell. */
+const MUTATING_TOOLS = new Set(["write_file", "apply_patch", "run_command"]);
+
+/** Read-only tools — always allowed in every mode (including plan). */
+const READONLY_TOOLS = new Set(["echo", "read_file", "list_dir"]);
+
+/**
+ * Phase-1 default gate. Tool- and mode-aware:
+ *   - read-only tools: always allow.
+ *   - mutating tools in `plan` mode: deny.
+ *   - mutating tools in other modes: allow (the dangerous-command blocker
+ *     inside run_command handles the actual safety work).
+ *   - unknown tools: allow (the registry/allowlist filtering already gates these).
+ */
 export class DefaultPermissionGate implements PermissionGate {
   async check(toolName: string, args: unknown, agent: AgentDefinition): Promise<PermissionDecision> {
-    log.debug({ tool: toolName, agent: agent.name, mode: agent.permissionMode }, "permission check (allow)");
+    if (READONLY_TOOLS.has(toolName)) return "allow";
+    if (MUTATING_TOOLS.has(toolName)) {
+      if (agent.permissionMode === "plan") {
+        log.info({ tool: toolName, agent: agent.name }, "denied: plan mode is read-only");
+        return "deny";
+      }
+      return "allow";
+    }
     return "allow";
   }
 }
