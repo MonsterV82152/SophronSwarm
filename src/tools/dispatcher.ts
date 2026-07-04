@@ -1,0 +1,102 @@
+/**
+ * Tool dispatcher — maps a tool_call to its handler and executes it.
+ *
+ * Enforces the agent's allow/deny lists and the permission gate. Tool errors
+ * are NEVER retried and NEVER fatal — they are returned to the model as
+ * `isError` results so the model can adapt (this is the contract that lets
+ * the agentic loop self-correct).
+ *
+ * Ported from V2's tool-execution pattern. See docs/PHASE_0_DESIGN.md §5.
+ */
+import { log } from "../util/log.js";
+import type { AgentDefinition, AgentRunState, ToolCall, ToolResult } from "../types.js";
+import { ToolRegistry } from "./registry.js";
+
+/** A permission decision for a tool invocation. */
+export type PermissionDecision = "allow" | "deny" | "prompt";
+
+/**
+ * Permission gate. Phase 0: a stub that logs and allows everything (no real
+ * sandbox or prompts yet). Phase 6 replaces this with the auto-mode
+ * classifier + interactive prompts.
+ */
+export interface PermissionGate {
+  check(toolName: string, args: unknown, agent: AgentDefinition): Promise<PermissionDecision>;
+}
+
+/** Phase-0 default gate: allow everything, log risky-looking calls. */
+export class DefaultPermissionGate implements PermissionGate {
+  async check(toolName: string, args: unknown, agent: AgentDefinition): Promise<PermissionDecision> {
+    log.debug({ tool: toolName, agent: agent.name, mode: agent.permissionMode }, "permission check (allow)");
+    return "allow";
+  }
+}
+
+export class ToolDispatcher {
+  /** Exposed so the loop can read filtered tool definitions per-agent. */
+  readonly registry: ToolRegistry;
+
+  constructor(
+    registry: ToolRegistry,
+    private gate: PermissionGate = new DefaultPermissionGate(),
+  ) {
+    this.registry = registry;
+  }
+
+  async dispatch(
+    call: ToolCall,
+    agent: AgentDefinition,
+    state: AgentRunState,
+  ): Promise<ToolResult> {
+    const name = call.function.name;
+
+    // ── Parse arguments ────────────────────────────────────────────────────
+    let args: Record<string, unknown>;
+    try {
+      args = JSON.parse(call.function.arguments || "{}");
+      if (args === null || typeof args !== "object" || Array.isArray(args)) {
+        return errorResult(call.id, `Tool arguments must be a JSON object, got ${typeof args}`);
+      }
+    } catch {
+      return errorResult(call.id, `Invalid JSON arguments: ${call.function.arguments}`);
+    }
+
+    // ── Allow / deny enforcement ───────────────────────────────────────────
+    if (agent.disallowedTools?.includes(name)) {
+      return errorResult(call.id, `Tool '${name}' is disallowed for this agent`);
+    }
+    if (agent.tools && !agent.tools.includes(name)) {
+      return errorResult(call.id, `Tool '${name}' is not in this agent's allowlist`);
+    }
+
+    // ── Resolve handler ────────────────────────────────────────────────────
+    const spec = this.registry.get(name);
+    if (!spec) return errorResult(call.id, `Unknown tool '${name}'`);
+
+    // ── Permission gate (Phase 0: allow-only stub) ─────────────────────────
+    const decision = await this.gate.check(name, args, agent);
+    if (decision === "deny") {
+      return errorResult(call.id, `Denied by permission gate (mode=${agent.permissionMode})`);
+    }
+    // "prompt" — Phase 0 has no UI to prompt with; treat as allow + log.
+    if (decision === "prompt") {
+      log.info({ tool: name, agent: agent.name }, "permission prompt skipped (no UI in Phase 0)");
+    }
+
+    // ── Execute (tool errors are surfaced to the model, never thrown) ──────
+    try {
+      const out = await spec.handler({ args, agent, state });
+      const content = typeof out === "string" ? out : JSON.stringify(out);
+      log.debug({ tool: name, chars: content.length }, "tool ok");
+      return { tool_call_id: call.id, content };
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      log.warn({ tool: name, err: msg }, "tool error (surfaced to model)");
+      return errorResult(call.id, `${name}: ${msg}`);
+    }
+  }
+}
+
+function errorResult(toolCallId: string, message: string): ToolResult {
+  return { tool_call_id: toolCallId, content: message, isError: true };
+}
