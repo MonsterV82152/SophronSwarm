@@ -41,8 +41,6 @@ export interface RunOptions {
   services: SharedServices;
   /** Delegation context set when this run is a sub-agent. */
   delegationCtx?: DelegationContext;
-  /** Shared-memory blocks (Phase 3). Keys = section titles. */
-  sharedMemory?: Map<string, string>;
   /** Override the default max-turns cap. */
   maxTurns?: number;
 }
@@ -81,12 +79,25 @@ export interface RunResult {
  * (transient ones are retried inside the client).
  */
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
-  const { agent, task, workingDir, llm, dispatcher, checkpointer, sharedMemory, services } = opts;
+  const { agent, task, workingDir, llm, dispatcher, checkpointer, services } = opts;
   const maxTurns = opts.maxTurns ?? agent.maxTurns ?? DEFAULT_MAX_TURNS;
+
+  // ── Phase 3: pull memory into context (auto-injection) ──────────────────
+  // Shared memory: always injected (project context). Per-agent memory: the
+  // agent's own recorded lessons (first ~200 lines), injected unless the agent
+  // explicitly opts out of per-agent scope.
+  const sharedMemory = services.sharedMemoryStore.toInjectionMap();
+  const allowPerAgent =
+    !agent.memoryScopes || agent.memoryScopes.length === 0 || agent.memoryScopes.includes("per-agent");
+  const agentMemory = allowPerAgent ? services.agentMemoryStore.readForInjection(agent.name) : "";
 
   const promptBuilder = new PromptBuilder();
   const state = initRunState(agent, task, workingDir, opts.delegationCtx);
-  const messages: LLMMessage[] = promptBuilder.build(agent, task, { workingDir, sharedMemory });
+  const messages: LLMMessage[] = promptBuilder.build(agent, task, {
+    workingDir,
+    sharedMemory: sharedMemory.size > 0 ? sharedMemory : undefined,
+    agentMemory: agentMemory || undefined,
+  });
   state.messages = messages;
 
   recorder.openForRun(state.runId);

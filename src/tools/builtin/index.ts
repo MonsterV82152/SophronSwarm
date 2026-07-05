@@ -1,6 +1,6 @@
 /**
  * Built-in tools: echo, read_file, write_file, list_dir, run_command,
- * apply_patch, delegate.
+ * apply_patch, delegate, remember, advance_checkpoint.
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, relative, join } from "node:path";
@@ -9,6 +9,8 @@ import { safeResolve } from "./paths.js";
 import { run_command } from "./run_command.js";
 import { apply_patch } from "./apply_patch.js";
 import { delegate } from "./delegate.js";
+import { remember } from "./remember.js";
+import { advance_checkpoint } from "./advance_checkpoint.js";
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
@@ -95,4 +97,4 @@ export const list_dir: ToolSpec = {
   },
 };
 
-export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate];
+export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint];

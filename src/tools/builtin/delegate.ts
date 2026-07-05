@@ -106,6 +106,37 @@ export const delegate: ToolSpec = {
       },
       "delegation complete",
     );
+
+    // ── 6. Persist a concise record to shared memory (Phase 3) ─────────────
+    // So the next agent/session picks up what was done without replaying the
+    // full sub-agent transcript.
+    persistHandoffToShared(services.sharedMemoryStore, packet);
     return formatHandoffPacket(packet);
   },
 };
+
+/**
+ * Append a concise handoff record to `.sophron/shared/HANDOFFS.md` under a
+ * "Recent Delegations" section. Capped at the most recent entries (oldest are
+ * trimmed) so the file doesn't grow unbounded.
+ */
+const HANDOFFS_FILE = "HANDOFFS.md";
+const HANDOFFS_SECTION = "Recent Delegations";
+const MAX_HANDOFF_ENTRIES = 20;
+
+function persistHandoffToShared(
+  store: import("../../memory/sharedStore.js").SharedMemoryStore,
+  packet: import("../../types.js").HandoffPacket,
+): void {
+  const date = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const files = packet.filesChanged.length > 0 ? packet.filesChanged.join(", ") : "(none)";
+  const line = `- [${date}] ${packet.agentName} → ${packet.outcome} (${packet.turns} turns): ${packet.summary.slice(0, 200)} | Files: ${files}`;
+
+  let body = store.appendToSection(HANDOFFS_FILE, HANDOFFS_SECTION, line);
+  // Trim to the most recent MAX_HANDOFF_ENTRIES entries.
+  const entries = body.split("\n").filter((l) => l.trim().startsWith("- "));
+  if (entries.length > MAX_HANDOFF_ENTRIES) {
+    body = entries.slice(entries.length - MAX_HANDOFF_ENTRIES).join("\n");
+    store.writeSection(HANDOFFS_FILE, HANDOFFS_SECTION, body);
+  }
+}

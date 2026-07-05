@@ -31,6 +31,8 @@ export interface BuildContext {
   workingDir: string;
   /** Shared-memory blocks to inject (Phase 3). Keys = section titles. */
   sharedMemory?: Map<string, string>;
+  /** Per-agent memory text to inject (Phase 3). First ~200 lines of MEMORY.md. */
+  agentMemory?: string;
 }
 
 export class PromptBuilder {
@@ -39,6 +41,14 @@ export class PromptBuilder {
 
     // ── Position 0: stable system prompt ─────────────────────────────────
     let system = BASE_SYSTEM_RULES;
+
+    // Per-agent memory injected BEFORE shared context (it's this agent's own
+    // lessons — high signal, low volume). Stable within a session.
+    if (ctx.agentMemory && ctx.agentMemory.trim()) {
+      system += "\nYOUR PAST MEMORY (lessons you recorded previously):\n";
+      system += `${ctx.agentMemory.trim()}\n`;
+    }
+
     if (ctx.sharedMemory && ctx.sharedMemory.size > 0) {
       // Shared memory injected here (stable within a checkpoint) — Phase 3.
       system += "\nSHARED PROJECT CONTEXT:\n";

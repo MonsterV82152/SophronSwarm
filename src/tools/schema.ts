@@ -16,6 +16,10 @@ export interface SharedServices {
   toolRegistry: import("./registry.js").ToolRegistry;
   dispatcher: import("./dispatcher.js").ToolDispatcher;
   checkpointer: import("../state/checkpointer.js").Checkpointer;
+  /** Shared memory store (`.sophron/shared/`). Phase 3. */
+  sharedMemoryStore: import("../memory/sharedStore.js").SharedMemoryStore;
+  /** Per-agent memory store (`.sophron/memory/<id>/`). Phase 3. */
+  agentMemoryStore: import("../memory/agentStore.js").AgentMemoryStore;
 }
 
 export interface ToolContext {
