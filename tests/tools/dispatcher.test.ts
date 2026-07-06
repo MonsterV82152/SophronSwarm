@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { ToolRegistry } from "../../src/tools/registry.js";
 import { ToolDispatcher } from "../../src/tools/dispatcher.js";
 import { BUILTIN_TOOLS } from "../../src/tools/builtin/index.js";
+import { Purifier } from "../../src/tools/purifier.js";
+import type { SharedServices } from "../../src/tools/schema.js";
 import type { AgentDefinition, AgentRunState, ToolCall } from "../../src/types.js";
 
 function makeCall(name: string, args: object): ToolCall {
@@ -131,5 +133,70 @@ describe("ToolDispatcher", () => {
       makeState(dir),
     );
     expect(r.isError).toBe(true);
+  });
+
+  describe("output purifier integration", () => {
+    it("purifies run_command output when a purifier is wired into services", async () => {
+      // Register a fake "run_command" that returns noisy ANSI output.
+      registry.register({
+        name: "run_command",
+        description: "test noisy tool",
+        parameters: { type: "object", properties: { cmd: { type: "string" } } },
+        handler: () => "\x1b[32mBUILD SUCCESS\x1b[0m\n\n\n\nDone",
+      });
+      const purifier = new Purifier(); // deterministic-only (no llm)
+      const services = { purifier } as unknown as SharedServices;
+      const r = await dispatcher.dispatch(
+        makeCall("run_command", { cmd: "echo hi" }),
+        makeAgent(),
+        makeState(dir),
+        services,
+      );
+      expect(r.isError).toBeFalsy();
+      expect(r.content).not.toContain("\x1b[");
+      expect(r.content).toContain("BUILD SUCCESS");
+      expect(r.content).toContain("Done");
+      expect(r.rawPath).toBeDefined();
+      // ANSI stripped (the whole point of purification).
+      expect(r.content).not.toContain("\x1b[");
+      // The collapseBlankLines rule is unit-tested in purifier.test.ts;
+      // here we only confirm the marker points at the saved raw path.
+      expect(r.content).toContain("[output purified");
+    });
+
+    it("skips purification for read_file even with a purifier wired", async () => {
+      writeFileSync(join(dir, "code.txt"), "function foo() {}\n");
+      const purifier = new Purifier();
+      const services = { purifier } as unknown as SharedServices;
+      const r = await dispatcher.dispatch(
+        makeCall("read_file", { path: "code.txt" }),
+        makeAgent(),
+        makeState(dir),
+        services,
+      );
+      // read_file is not in the noisy set → passthrough, no rawPath.
+      expect(r.content).toBe("function foo() {}\n");
+      expect(r.rawPath).toBeUndefined();
+    });
+
+    it("does not purify when outputPurifier is off", async () => {
+      registry.register({
+        name: "run_command",
+        description: "test noisy tool",
+        parameters: { type: "object", properties: { cmd: { type: "string" } } },
+        handler: () => "\x1b[32mraw\x1b[0m",
+      });
+      const purifier = new Purifier();
+      const services = { purifier } as unknown as SharedServices;
+      const r = await dispatcher.dispatch(
+        makeCall("run_command", { cmd: "x" }),
+        makeAgent({ outputPurifier: "off" }),
+        makeState(dir),
+        services,
+      );
+      // Off mode: content unchanged, ANSI preserved, no rawPath.
+      expect(r.content).toBe("\x1b[32mraw\x1b[0m");
+      expect(r.rawPath).toBeUndefined();
+    });
   });
 });

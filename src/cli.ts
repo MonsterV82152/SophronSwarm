@@ -11,9 +11,11 @@ import chalk from "chalk";
 import { resolve } from "node:path";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
+import { listProviders, getProvider } from "./llm/providers.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
 import { BUILTIN_TOOLS } from "./tools/builtin/index.js";
+import { Purifier } from "./tools/purifier.js";
 import { Checkpointer } from "./state/checkpointer.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { SharedMemoryStore, SHARED_DIR_NAME } from "./memory/sharedStore.js";
@@ -46,6 +48,7 @@ function buildServices(workingDir: string, registry: AgentRegistry): SharedServi
   const mcpPool = new McpConnectionPool(mcpConfig.servers);
   const mcpCatalog = new McpToolCatalog(mcpPool);
   const mcpCostMeter = new TokenCostMeter();
+  const purifier = new Purifier({ llm });
 
   return {
     llm,
@@ -59,6 +62,7 @@ function buildServices(workingDir: string, registry: AgentRegistry): SharedServi
     mcpCatalog,
     mcpCostMeter,
     approvals,
+    purifier,
   };
 }
 
@@ -194,6 +198,55 @@ export async function runCli(argv: string[]): Promise<void> {
         } catch {
           console.log(chalk.gray(line));
         }
+      }
+    });
+
+  program
+    .command("providers")
+    .description("List configured provider instances, or test connectivity for one")
+    .argument("[name]", "provider instance name to test (omit to list all)")
+    .action(async (name?: string) => {
+      const providers = listProviders();
+      if (providers.length === 0) {
+        console.log(chalk.gray("No providers configured. Add entries to ~/.sophron/config.json or set env defaults."));
+        return;
+      }
+
+      // ── List mode ─────────────────────────────────────────────────────────
+      if (!name) {
+        for (const p of providers) {
+          const creds = p.apiKey ? chalk.green("✓ key") : chalk.gray("no key");
+          const model = p.defaultModel ? chalk.gray(p.defaultModel) : chalk.gray("(no default model)");
+          console.log(`${chalk.bold(p.name)}  ${chalk.cyan(p.kind)}  ${chalk.gray(p.baseURL)}  ${creds}  ${model}`);
+        }
+        console.log(chalk.gray(`\n${providers.length} instance(s). Test one with: sophron providers <name>`));
+        return;
+      }
+
+      // ── Test mode: ping GET /v1/models on the named instance ─────────────
+      let cfg;
+      try {
+        cfg = getProvider(name);
+      } catch (e) {
+        console.error(chalk.red((e as Error).message));
+        process.exitCode = 1;
+        return;
+      }
+      process.stdout.write(chalk.gray(`Testing ${cfg.name} (${cfg.kind}) at ${cfg.baseURL} … `));
+      const llm = new LLMClient();
+      try {
+        const start = Date.now();
+        // listModels hits GET /v1/models on the OpenAI-compatible endpoint.
+        const models = await llm.listModels(cfg.name);
+        const ms = Date.now() - start;
+        console.log(chalk.green(`✓ reachable`) + chalk.gray(` (${ms}ms, ${models.length} model(s))`));
+        if (models.length > 0) {
+          const sample = models.slice(0, 5).map((m) => m.id).join(", ");
+          console.log(chalk.gray(`  sample: ${sample}${models.length > 5 ? ", …" : ""}`));
+        }
+      } catch (e) {
+        console.log(chalk.red(`✗ unreachable`) + chalk.gray(` — ${(e as Error).message}`));
+        process.exitCode = 1;
       }
     });
 

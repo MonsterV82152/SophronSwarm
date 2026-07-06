@@ -13,6 +13,7 @@ import type { AgentDefinition, AgentRunState, ToolCall, ToolResult } from "../ty
 import { ToolRegistry } from "./registry.js";
 import type { SharedServices, ToolSpec } from "./schema.js";
 import { isMcpTool } from "../mcp/promotion.js";
+import { DEFAULT_PURIFIER_THRESHOLD } from "./purifier.js";
 
 /** A permission decision for a tool invocation. */
 export type PermissionDecision = "allow" | "deny" | "prompt";
@@ -126,6 +127,26 @@ export class ToolDispatcher {
     try {
       const out = await spec.handler({ args, agent, state, services: services! });
       const content = typeof out === "string" ? out : JSON.stringify(out);
+
+      // ── Purify successful output before it enters message history ────────
+      // Compresses noisy tool results (run_command / MCP) via deterministic
+      // rules + optional cheap-model extraction. Raw output is preserved on
+      // disk; the agent can retrieve it via read_raw_output. Never throws —
+      // on any internal error the original content is returned unchanged.
+      // Skip purification for error results and for read_raw_output itself.
+      if (services?.purifier && name !== "read_raw_output") {
+        const purified = await services.purifier.purify(content, {
+          mode: agent.outputPurifier ?? "default",
+          threshold: agent.outputPurifierThreshold ?? DEFAULT_PURIFIER_THRESHOLD,
+          workingDir: state.workingDir,
+          runId: state.runId,
+          toolCallId: call.id,
+          toolName: name,
+        });
+        log.debug({ tool: name, chars: content.length, out: purified.content.length, t1: purified.tier1Applied, t2: purified.tier2Applied }, "tool ok (purified)");
+        return { tool_call_id: call.id, content: purified.content, rawPath: purified.rawPath };
+      }
+
       log.debug({ tool: name, chars: content.length }, "tool ok");
       return { tool_call_id: call.id, content };
     } catch (e) {

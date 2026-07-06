@@ -51,6 +51,10 @@ export interface AgentDefinition {
   delegateAllowlist?: string[];
   /** Hard cap on loop iterations. Falls back to DEFAULT_MAX_TURNS. */
   maxTurns?: number;
+  /** Output-purifier mode (M1): "default" purify noisy tools only, "aggressive" purify all, "off" never. */
+  outputPurifier?: import("./tools/purifier.js").PurifierMode;
+  /** Token threshold above which the purifier's Tier 2 (cheap model) may fire. */
+  outputPurifierThreshold?: number;
   /** Where the definition was loaded from. */
   source: "project" | "user" | "builtin";
   /** Absolute path to the source file (for hot-reload). */
@@ -89,6 +93,9 @@ export interface ToolResult {
   tool_call_id: string;
   content: string;
   isError?: boolean;
+  /** Workspace-relative path to the full raw output, if the purifier compressed this result.
+   * The agent can call `read_raw_output` with this path to retrieve the unfiltered output. */
+  rawPath?: string;
 }
 
 export interface Usage {

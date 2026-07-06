@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import matter from "gray-matter";
 import { z } from "zod";
-import { resolveModel } from "../llm/providers.js";
+import { resolveModelWithProvider } from "../llm/providers.js";
 import { log } from "../util/log.js";
 import type { AgentDefinition, ModelTier, PermissionMode } from "../types.js";
 
@@ -22,11 +22,16 @@ const FrontmatterSchema = z.object({
   tools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),
   model: z.union([z.enum(["inherit", "frontier", "mid", "cheap"]), z.string()]).default("inherit"),
+  /** Named provider instance (M2). When set, targets a specific configured
+   * endpoint (e.g. "ollama-desktop"). When unset, resolved from the model. */
+  provider: z.string().optional(),
   permissionMode: z.enum(PERMISSION_MODES).default("default"),
   mcpServers: z.array(z.union([z.string(), z.record(z.unknown())])).optional(),
   memoryScopes: z.array(z.enum(["per-agent", "shared", "task"])).optional(),
   delegateAllowlist: z.array(z.string()).optional(),
   maxTurns: z.number().int().positive().optional(),
+  outputPurifier: z.enum(["default", "aggressive", "off"]).optional(),
+  outputPurifierThreshold: z.number().int().positive().optional(),
 });
 
 export type AgentSource = "project" | "user" | "builtin";
@@ -81,10 +86,12 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
   }
 
   // Resolve model tier → concrete provider+model id (done ONCE at load time).
+  // If an explicit `provider:` instance is set, target it directly (validated);
+  // otherwise resolve from the model id / prefix / tier.
   let model: string;
   let provider;
   try {
-    const resolved = resolveModel(fm.model as string);
+    const resolved = resolveModelWithProvider(fm.model as string, fm.provider);
     model = resolved.model;
     provider = resolved.provider;
   } catch (e) {
@@ -105,6 +112,8 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
     memoryScopes: fm.memoryScopes,
     delegateAllowlist: fm.delegateAllowlist,
     maxTurns: fm.maxTurns,
+    outputPurifier: fm.outputPurifier,
+    outputPurifierThreshold: fm.outputPurifierThreshold,
     source,
     filePath,
   };

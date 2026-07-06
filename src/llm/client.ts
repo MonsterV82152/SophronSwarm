@@ -75,6 +75,24 @@ export class LLMClient {
     return client;
   }
 
+  /**
+   * List models available on a provider instance (GET /v1/models). Used by the
+   * `sophron providers <name>` connectivity test. Uses a short timeout (10s) so
+   * an unreachable host fails fast rather than blocking the operator.
+   */
+  async listModels(provider: ProviderName): Promise<{ id: string }[]> {
+    const p = getProvider(provider);
+    // Fresh client with a short timeout — don't reuse the 120s complete() client.
+    const testClient = new OpenAI({
+      baseURL: p.baseURL,
+      apiKey: p.apiKey ?? undefined,
+      timeout: 10_000,
+      maxRetries: 0,
+    });
+    const res = await testClient.models.list();
+    return res.data.map((m) => ({ id: m.id }));
+  }
+
   async complete(req: CompleteRequest): Promise<LLMResponse> {
     // Provider is resolved ONCE at agent-load time and carried on the agent.
     // If a caller passes a concrete provider, trust it (no re-resolution).

@@ -28,6 +28,8 @@ export interface SharedServices {
   mcpCostMeter: import("../mcp/costMeter.js").TokenCostMeter;
   /** Approvals queue (permission-gate prompts route here). Phase 6. */
   approvals: import("../tui/approvals.js").ApprovalsQueue;
+  /** Output purifier — compresses noisy tool results before they enter message history (M1). */
+  purifier: import("./purifier.js").Purifier;
 }
 
 export interface ToolContext {

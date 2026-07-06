@@ -99,4 +99,32 @@ export const list_dir: ToolSpec = {
   },
 };
 
-export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint, mcp_tool_search, propose_agent];
+export const read_raw_output: ToolSpec = {
+  name: "read_raw_output",
+  description:
+    "Read the full, unfiltered raw output of a previous tool call that was purified/compressed. " +
+    "Use this when a purified tool result is ambiguous and you need the complete original output. " +
+    "Pass the workspace-relative path that was included in the purified result's '[output purified ...]' marker.",
+  parameters: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description: "Workspace-relative path to the raw output file (from the purified result's marker).",
+      },
+    },
+    required: ["path"],
+  },
+  handler: ({ args, state }) => {
+    const rel = requireString(args, "path");
+    // The raw store lives under .sophron/raw/ which is inside the workspace, so
+    // safeResolve is the correct path-traversal guard here.
+    const abs = safeResolve(state.workingDir, rel);
+    if (!existsSync(abs)) {
+      return "(raw output no longer available — it may have been pruned by the retention limit)";
+    }
+    return readFileSync(abs, "utf8");
+  },
+};
+
+export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint, mcp_tool_search, propose_agent, read_raw_output];
