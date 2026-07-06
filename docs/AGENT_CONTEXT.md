@@ -2,8 +2,8 @@
 
 > **Purpose:** A self-contained brief that gives another AI agent full context to continue developing SophronSwarm V3. Read this top to bottom before writing any code.
 >
-> **Last updated:** 2026-07-05
-> **Current state:** Phases 0, 1, 2, 3 complete (200/200 tests passing, clean `tsc`). Phase 4 (MCP) is next.
+> **Last updated:** 2026-07-06
+> **Current state:** Phases 0–5a + 6 complete (384/384 tests passing, clean `tsc`). Phase 5b (web UI) + Phase 7 (specialization kits) next.
 
 ---
 
@@ -60,12 +60,27 @@ V3/
 │   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; resolves model tier ONCE at load
 │   │   ├── registry.ts      # indexed collection + chokidar hot-reload + 12-agent soft cap
 │   │   ├── loop.ts          # THE AGENTIC LOOP (the heart) — pulls memory from services into prompt
-│   │   └── delegation.ts    # checkPolicy (depth+cycle+allowlist), buildChildCtx, buildHandoffPacket, formatHandoffPacket
+│   │   ├── delegation.ts    # checkPolicy (depth+cycle+allowlist), buildChildCtx, buildHandoffPacket, formatHandoffPacket
+│   │   ├── autoGate.ts      # LlmAutoModeClassifier (cheap model vets commands) + AutoPermissionGate (Phase 6)
+│   │   └── drafts.ts        # AgentDraftStore — draft→approve ledger for agent creation (Phase 6)
 │   ├── memory/              # Phase 3 — three-tier memory layer
 │   │   ├── sections.ts      # ## -section parse/serialize/edit + dedup helpers (shared by both stores)
 │   │   ├── sharedStore.ts   # .sophron/shared/*.md (file + section level, toInjectionMap)
 │   │   ├── agentStore.ts    # .sophron/memory/<id>/MEMORY.md (quality-gated append + 200-line inject)
 │   │   └── checkpoints.ts   # parseCheckpoints + CheckpointManager.advance()
+│   ├── mcp/                 # Phase 4 — lazy MCP loader
+│   │   ├── config.ts        # McpServerConfig + loadGlobalConfig(.sophron/mcp.json) + resolveAgentServers
+│   │   ├── pool.ts          # McpConnectionPool — one Client per server, kept alive (lazy connect)
+│   │   ├── catalog.ts       # McpToolCatalog — index + keyword search (no embeddings)
+│   │   ├── costMeter.ts     # TokenCostMeter — per-tool cost estimate (chars/3.5) + cumulative + budget warn
+│   │   └── promotion.ts     # promoteTool (catalog→ToolSpec), mcpToolId, flattenMcpResult
+│   ├── tui/                 # Phase 5a — interactive operator surface (Ink)
+│   │   ├── slashCommands.ts # parser: /agents /runs /checkpoint /advance /cost /memory /run /approve /rewind
+│   │   ├── dashboard.ts     # buildDashboard: aggregates SharedServices → renderable model
+│   │   ├── approvals.ts     # ApprovalsQueue + gateDecisionFor (prompt-gate backend)
+│   │   ├── app.tsx          # Ink shell: input + view switching + command routing
+│   │   ├── launch.tsx       # JSX bridge (CLI .ts → App .tsx)
+│   │   └── components/DashboardView.tsx  # dashboard panel
 │   ├── llm/
 │   │   ├── providers.ts     # OpenRouter/Ollama/z.ai config + resolveModel()
 │   │   ├── client.ts        # one OpenAI-compat client; retry-controlled (timeout=120, maxRetries=0)
@@ -76,13 +91,15 @@ V3/
 │   │   ├── dispatcher.ts    # ToolDispatcher + PermissionGate (tool+mode-aware)
 │   │   └── builtin/
 │   │       ├── paths.ts           # safeResolve (path-traversal guard)
-│   │       ├── index.ts           # registers all 9 built-in tools
+│   │   ├── index.ts           # registers all 10 built-in tools
 │   │       ├── echo.ts, read_file.ts, write_file.ts, list_dir.ts  (in index.ts)
 │   │       ├── run_command.ts     # shell under sandbox + dangerous-command blocker
 │   │       ├── apply_patch.ts     # unified-diff applier
 │   │       ├── delegate.ts        # spawn isolated sub-agent; persists handoff to shared memory
 │   │       ├── remember.ts        # write to per-agent or shared memory (Phase 3)
-│   │       └── advance_checkpoint.ts  # mark current milestone done, advance (Phase 3)
+│   │       ├── advance_checkpoint.ts  # mark current milestone done, advance (Phase 3)
+│   │       ├── mcp_tool_search.ts     # lazy MCP meta-tool: search→promote (Phase 4)
+│   │       └── propose_agent.ts       # Architect drafts agent for operator approval (Phase 6)
 │   ├── sandbox/
 │   │   ├── backend.ts             # ExecutionBackend interface + getBackend() factory
 │   │   ├── spawn.ts               # spawnWithTimeout (AbortController + settled flag)
@@ -98,7 +115,7 @@ V3/
 │       ├── log.ts                 # pino (pretty in dev)
 │       ├── tokenize.ts            # approxTokens (chars/3.5)
 │       └── retry.ts               # isTransientError + retryTransient (backoff + jitter)
-├── tests/                   # 14 suites, 200 tests, all passing
+├── tests/                   # 25 suites, 384 tests, all passing
 │   ├── util/retry.test.ts                       (9)
 │   ├── state/checkpointer.test.ts               (7)
 │   ├── tools/dispatcher.test.ts                 (11)
@@ -108,6 +125,17 @@ V3/
 │   ├── memory/checkpoints.test.ts                (14)
 │   ├── tools/memoryTools.test.ts                 (8)
 │   ├── llm/promptBuilderMemory.test.ts           (5)
+│   ├── mcp/config.test.ts                        (20)
+│   ├── mcp/costMeter.test.ts                     (10)
+│   ├── mcp/catalog.test.ts                       (11)
+│   ├── mcp/promotion.test.ts                     (15)
+│   ├── mcp/pool.live.test.ts                     (6, live)
+│   ├── tui/slashCommands.test.ts                 (29)
+│   ├── tui/approvals.test.ts                     (13)
+│   ├── tui/dashboard.test.ts                     (14)
+│   ├── tui/components.test.tsx                   (33)
+│   ├── agent/autoGate.test.ts                    (18)
+│   └── agent/drafts.test.ts                      (15)
 │   ├── agent/loader.test.ts                     (7)
 │   ├── sandbox/dangerousCommands.test.ts        (55)
 │   ├── sandbox/patchApplier.test.ts             (10)
@@ -122,7 +150,8 @@ V3/
 - `npm run dev -- run <agent> "<task>"` — run an agent
 - `npm run dev -- agents` — list loaded agents
 - `npm run dev -- replay <runId>` — print a run's JSONL events
-- `npm test` — vitest (200 tests)
+- `npm test` — vitest (384 tests)
+- `npm run dev` (no args) — launch the interactive TUI dashboard
 - `npm run typecheck` — `tsc --noEmit`
 
 ---
@@ -241,7 +270,7 @@ flowchart TB
 
 ## 7. First message to send the next agent
 
-> "Continue SophronSwarm V3 development at Phase 4 (MCP). Read `docs/AGENT_CONTEXT.md` first, then `docs/PHASE_3_COMPLETE.md` for the handoff. The memory layer is complete (200/200 tests); Phase 4 builds the lazy MCP loader + `mcp_tool_search` meta-tool + token-cost meter + connection pool on top of the existing `SharedServices` DI object and `ToolSpec`/`ToolRegistry` contract. Run `npm test` to confirm the baseline (200/200) before changing anything."
+> "Continue SophronSwarm V3 development at Phase 7 (specialization kits) or Phase 5b (web UI). Read `docs/AGENT_CONTEXT.md` first, then `docs/PHASE_6_COMPLETE.md` for the handoff. Phase 6 is complete (384/384 tests): the auto-mode classifier (cheap local `qwen3.5:9b-fast` vets each mutating command) + `propose_agent` (Architect drafts agents → operator approves → bootstrap closes). Phase 7 ships starter agent packs (design/security/feature/orchestrator) using `propose_agent` + the auto gate; Phase 5b promotes the V2 debug server to Next.js. Run `npm test` to confirm the baseline (384/384) before changing anything."
 
 ---
 

@@ -18,6 +18,12 @@ import { Checkpointer } from "./state/checkpointer.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { SharedMemoryStore, SHARED_DIR_NAME } from "./memory/sharedStore.js";
 import { AgentMemoryStore, AGENT_MEMORY_DIR_NAME } from "./memory/agentStore.js";
+import { loadGlobalConfig } from "./mcp/config.js";
+import { McpConnectionPool } from "./mcp/pool.js";
+import { McpToolCatalog } from "./mcp/catalog.js";
+import { TokenCostMeter } from "./mcp/costMeter.js";
+import { ApprovalsQueue } from "./tui/approvals.js";
+import { LlmAutoModeClassifier, AutoPermissionGate } from "./agent/autoGate.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
 import type { SharedServices } from "./tools/schema.js";
@@ -26,10 +32,21 @@ function buildServices(workingDir: string, registry: AgentRegistry): SharedServi
   const toolRegistry = new ToolRegistry();
   for (const t of BUILTIN_TOOLS) toolRegistry.register(t);
   const llm = new LLMClient();
-  const dispatcher = new ToolDispatcher(toolRegistry);
+  const approvals = new ApprovalsQueue();
+  const classifier = new LlmAutoModeClassifier(llm);
+  const dispatcher = new ToolDispatcher(toolRegistry, new AutoPermissionGate(classifier, approvals));
   const checkpointer = new Checkpointer(resolve(workingDir, ".sophron", "checkpoint.db"));
   const sharedMemoryStore = new SharedMemoryStore(resolve(workingDir, SHARED_DIR_NAME));
   const agentMemoryStore = new AgentMemoryStore(resolve(workingDir, AGENT_MEMORY_DIR_NAME));
+
+  // MCP: load global config + register every server's config with the pool.
+  // Per-agent scoping happens at run time (the agent's mcpServers frontmatter
+  // is resolved against the pool's configured servers).
+  const mcpConfig = loadGlobalConfig(workingDir);
+  const mcpPool = new McpConnectionPool(mcpConfig.servers);
+  const mcpCatalog = new McpToolCatalog(mcpPool);
+  const mcpCostMeter = new TokenCostMeter();
+
   return {
     llm,
     agentRegistry: registry,
@@ -38,6 +55,10 @@ function buildServices(workingDir: string, registry: AgentRegistry): SharedServi
     checkpointer,
     sharedMemoryStore,
     agentMemoryStore,
+    mcpPool,
+    mcpCatalog,
+    mcpCostMeter,
+    approvals,
   };
 }
 
@@ -100,7 +121,27 @@ export async function runCli(argv: string[]): Promise<void> {
         log.error({ err: e }, "run failed");
         process.exitCode = 1;
       } finally {
-        // Note: better-sqlite3 handle stays open; process exit will close it.
+        // Close MCP server connections (subprocesses / HTTP sessions).
+        await services.mcpPool.closeAll().catch(() => {});
+      }
+    });
+
+  program
+    .command("tui", { isDefault: true })
+    .description("Launch the interactive TUI dashboard")
+    .option("-d, --dir <path>", "working directory", process.cwd())
+    .action(async (opts: { dir: string }) => {
+      const workingDir = resolve(opts.dir);
+      const registry = new AgentRegistry();
+      registry.scan();
+      registry.startWatch();
+      const services = buildServices(workingDir, registry);
+      const { launchTui } = await import("./tui/launch.js");
+      try {
+        await launchTui({ services, workspaceDir: workingDir });
+      } finally {
+        await registry.stopWatch();
+        await services.mcpPool.closeAll().catch(() => {});
       }
     });
 

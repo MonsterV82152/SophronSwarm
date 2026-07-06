@@ -23,6 +23,7 @@ import { ToolRegistry } from "../tools/registry.js";
 import { Checkpointer } from "../state/checkpointer.js";
 import { recorder } from "../state/recorder.js";
 import type { SharedServices } from "../tools/schema.js";
+import { promoteTool, recordPromotionCosts } from "../mcp/promotion.js";
 import {
   addUsage, EMPTY_USAGE,
   type AgentDefinition, type AgentRunState, type DelegationContext, type LLMMessage,
@@ -100,6 +101,11 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   });
   state.messages = messages;
 
+  // ── Phase 4: pre-promote tools from alwaysExpose servers ────────────────
+  // Eager servers opt into having all their tools bound from turn 0 (rare; the
+  // default is lazy search). Per-run isolated on state.mcpTools.
+  await prePromoteAlwaysExpose(agent, state, services);
+
   recorder.openForRun(state.runId);
   recorder.recordRunStart(state);
   checkpointer.save(state);
@@ -110,7 +116,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       recorder.recordTurnStart(state);
 
       // ── 1. Call the model (transient errors retried inside the client) ────
-      const tools = toolDefsFor(dispatcher.registry, agent);
+      const tools = toolDefsFor(dispatcher.registry, agent, state);
       const response = await llm.complete({ model: agent.model, provider: agent.provider, messages, tools });
       state.tokenUsage = addUsage(state.tokenUsage, response.usage);
       recorder.record({
@@ -188,7 +194,53 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   return { state };
 }
 
-/** Filter the registry's tools to this agent's allow/deny lists. */
-function toolDefsFor(registry: ToolRegistry, agent: AgentDefinition) {
-  return registry.definitionsFor({ allow: agent.tools, deny: agent.disallowedTools });
+/** Filter the registry's tools to this agent's allow/deny lists + merge promoted MCP tools. */
+function toolDefsFor(registry: ToolRegistry, agent: AgentDefinition, state: AgentRunState) {
+  const builtin = registry.definitionsFor({ allow: agent.tools, deny: agent.disallowedTools });
+  // Merge promoted MCP tools (Phase 4) — per-run isolated on state.mcpTools.
+  // The agent never needs to declare MCP tools in its allowlist; the mcp_tool_search
+  // meta-tool is the gate (it's a builtin, subject to normal allow/deny).
+  const mcp = (state.mcpTools ?? []).map((t) => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+  return [...builtin, ...mcp];
+}
+
+/**
+ * Pre-promote tools from servers declared `alwaysExpose: true` for this agent.
+ * Eager exposure is the rare opt-in; the default is lazy `mcp_tool_search`.
+ * Errors here are non-fatal (logged) — a failing server shouldn't abort the run.
+ */
+async function prePromoteAlwaysExpose(
+  agent: AgentDefinition,
+  state: AgentRunState,
+  services: SharedServices,
+): Promise<void> {
+  const declared = agent.mcpServers ?? [];
+  if (declared.length === 0) return;
+  const eager = services.mcpPool
+    .configuredServers()
+    .filter((s) => s.alwaysExpose === true)
+    .filter((s) => declared.some((d) => (typeof d === "string" ? d === s.name : d["name"] === s.name)));
+  if (eager.length === 0) return;
+
+  try {
+    await services.mcpCatalog.refresh(eager.map((s) => s.name));
+  } catch (e) {
+    log.warn({ err: (e as Error).message }, "alwaysExpose catalog refresh failed");
+    return;
+  }
+
+  const promoted = state.mcpTools ?? [];
+  for (const server of eager) {
+    const cap = server.maxTools ?? 20;
+    const tools = services.mcpCatalog.forServer(server.name).slice(0, cap);
+    for (const t of tools) {
+      promoted.push(promoteTool(t, services.mcpPool, services.mcpCostMeter));
+    }
+    recordPromotionCosts(tools, services.mcpCostMeter);
+  }
+  state.mcpTools = promoted;
+  log.info({ agent: agent.name, servers: eager.map((s) => s.name), tools: promoted.length }, "alwaysExpose pre-promoted");
 }

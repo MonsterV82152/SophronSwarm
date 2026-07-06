@@ -20,6 +20,14 @@ export interface SharedServices {
   sharedMemoryStore: import("../memory/sharedStore.js").SharedMemoryStore;
   /** Per-agent memory store (`.sophron/memory/<id>/`). Phase 3. */
   agentMemoryStore: import("../memory/agentStore.js").AgentMemoryStore;
+  /** MCP connection pool (one Client per server, kept alive). Phase 4. */
+  mcpPool: import("../mcp/pool.js").McpConnectionPool;
+  /** MCP tool search catalog (lazy-loaded tool index). Phase 4. */
+  mcpCatalog: import("../mcp/catalog.js").McpToolCatalog;
+  /** MCP token-cost meter (tracks promoted-tool cost). Phase 4. */
+  mcpCostMeter: import("../mcp/costMeter.js").TokenCostMeter;
+  /** Approvals queue (permission-gate prompts route here). Phase 6. */
+  approvals: import("../tui/approvals.js").ApprovalsQueue;
 }
 
 export interface ToolContext {

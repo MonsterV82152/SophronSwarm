@@ -141,6 +141,9 @@ export interface AgentRunState {
   seq?: number;
   /** Set when this run was spawned by a parent agent. */
   delegationCtx?: DelegationContext;
+  /** Promoted MCP tools for this run (Phase 4). Per-run isolated — a parent's
+   * promotions never leak into a child (consistent with Phase 2 context isolation). */
+  mcpTools?: import("./tools/schema.js").ToolSpec[];
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
