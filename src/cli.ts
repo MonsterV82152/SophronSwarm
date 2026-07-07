@@ -9,12 +9,14 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { resolve } from "node:path";
+import { homedir } from "node:os";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
 import { listProviders, getProvider } from "./llm/providers.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject } from "./project/registry.js";
+import { scaffoldProject, installGlobalArchitect, listTemplates } from "./init/templates.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
 export async function runCli(argv: string[]): Promise<void> {
@@ -198,6 +200,60 @@ export async function runCli(argv: string[]): Promise<void> {
         }
       } catch (e) {
         console.log(chalk.red(`✗ unreachable`) + chalk.gray(` — ${(e as Error).message}`));
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command("init")
+    .description("Scaffold a new project from a template (seeds the standardized orchestrator + specialist agents)")
+    .option("-t, --template <name>", "template name (minimal, cli, webapp, data-pipeline, or a user template)", "minimal")
+    .option("-n, --name <alias>", "project alias (defaults to directory basename)")
+    .option("-p, --path <dir>", "project path (defaults to ~/sophron_workspace/<name>)")
+    .option("-f, --force", "overwrite an existing agents/ directory")
+    .option("--list", "list available templates and exit")
+    .option("--install-architect", "install/update the global architect template at ~/.sophron/agents/architect.md")
+    .action((opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installArchitect?: boolean }) => {
+      // ── --list: print templates + exit ──
+      if (opts.list) {
+        const templates = listTemplates();
+        console.log(chalk.bold("Available templates:"));
+        for (const t of templates) {
+          console.log(`  ${chalk.cyan(t.name.padEnd(16))} ${chalk.gray(t.description)}`);
+        }
+        console.log(chalk.gray("\nUsage: sophron init --template <name> --name <alias>"));
+        return;
+      }
+
+      // ── --install-architect: write the global architect + exit ──
+      if (opts.installArchitect) {
+        const written = installGlobalArchitect(opts.force);
+        if (written) {
+          console.log(chalk.green(`✓ Installed global architect → ${written}`));
+        } else {
+          console.log(chalk.yellow("Global architect already exists (use --force to overwrite)."));
+        }
+        return;
+      }
+
+      // ── Scaffold a project ──
+      const templateName = opts.template ?? "minimal";
+      const name = opts.name ?? templateName;
+      const projectPath = opts.path
+        ? resolve(opts.path)
+        : resolve(homedir(), "sophron_workspace", name);
+
+      try {
+        const result = scaffoldProject(projectPath, { template: templateName, name: opts.name, force: opts.force });
+        console.log(chalk.green(`✓ Scaffolded project '${result.entry.name}' from template '${result.template}'`));
+        console.log(chalk.gray(`  path: ${result.projectPath}`));
+        console.log(chalk.gray(`  agents (${result.created.agents.length}): ${result.created.agents.join(", ")}`));
+        if (result.created.shared.length > 0) {
+          console.log(chalk.gray(`  shared: ${result.created.shared.join(", ")}`));
+        }
+        console.log(chalk.gray(`\nRun it: sophron --dir ${result.projectPath}`));
+      } catch (e) {
+        console.error(chalk.red(`Error: ${(e as Error).message}`));
         process.exitCode = 1;
       }
     });

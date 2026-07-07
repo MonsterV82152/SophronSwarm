@@ -140,10 +140,17 @@ function tokenize(input: string): string[] {
   return out;
 }
 
-/** Human-readable list of available slash-commands (for /help). */
+/**
+ * Static command list — kept for backward compatibility.
+ *
+ * @deprecated since M4 — use `helpForView(view)` from `./help.js` instead.
+ * The TUI now shows context-aware help based on the active view (see app.tsx).
+ * This constant is the command reference a view-agnostic caller would get.
+ */
 export const HELP_TEXT = `SophronSwarm V3 — TUI commands:
 
-  /agents              List loaded agent definitions
+  /projects            Jump to the Projects tab (switch project)
+  /agents              List loaded agent definitions (project surface)
   /runs [n]            Show recent runs (default 5)
   /checkpoint          Show the current project milestone
   /advance             Mark the current checkpoint complete + advance
@@ -152,8 +159,9 @@ export const HELP_TEXT = `SophronSwarm V3 — TUI commands:
   /run <agent> "<t>"   Run an agent on a task
   /approve <id> y|n    Resolve a pending approval
   /rewind <runId>      Rewind to a prior checkpoint
-  /clear               Clear the screen
-  /help                Show this help
+  /clear               Clear the output log
+  /help                Show context-aware help
   /quit                Exit
 
-Any text not starting with / is sent to the last-used agent as a task.`;
+Navigation: ←/→ tabs · ↑/↓ lists · Enter open · Esc back · type for input.
+Use /help on any view for its specific keys + commands.`;

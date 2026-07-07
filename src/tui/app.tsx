@@ -17,6 +17,7 @@ import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { resolve } from "node:path";
 import { parseSlashCommand } from "./slashCommands.js";
+import { helpForView, helpViewFor } from "./help.js";
 import { buildDashboard, buildOverview, readRunDetail, type OverviewModel, type RunDetail } from "./dashboard.js";
 import { CheckpointManager } from "../memory/checkpoints.js";
 import {
@@ -185,9 +186,17 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       }
       const cmd = parseSlashCommand(raw);
       switch (cmd.kind) {
-        case "help":
-          pushBlock("←/→ tabs · ↑/↓ lists · Enter open · Esc back · /commands · Ctrl+C quit", "cyan");
+        case "help": {
+          const detail = nav.agentDetail ? "agent" : nav.runDetail ? "run" : null;
+          const view = helpViewFor(
+            nav.surface,
+            activeHomeTab(nav),
+            activeProjectTab(nav),
+            detail,
+          );
+          for (const line of helpForView(view).split("\n")) pushBlock(line, "cyan");
           break;
+        }
         case "projects":
           setNav((p) => ({ ...p, surface: "home", homeTabIndex: HOME_TABS.indexOf("projects"), focus: "content", agentDetail: null, runDetail: null }));
           break;

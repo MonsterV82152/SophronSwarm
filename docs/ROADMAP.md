@@ -4,9 +4,9 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-07):** 501/501 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-07):** 547/547 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
-> complete.
+> + M4 (context-aware `/help`) + M5 (`sophron init` templates) complete.
 >
 > **Last updated:** 2026-07-07
 
@@ -62,8 +62,8 @@ SophronSwarm (global)                          ← operator's home
 | **M1 — Output Purifier** | ✅ Complete | deterministic + Tier-2 cheap-model filter; `read_raw_output` |
 | **M2 — Named Providers** | ✅ Complete | free-form instance names; multi-endpoint; `sophron providers` |
 | **M3 — TUI Shell (rewrite)** | ✅ Complete | box-chrome tabbed Home (Overview/Orchestrator-stub/Projects) + Project View (Status/Agents/Runs/Checkpoint/Memory/Cost) + Agent detail with live JSONL-tail stream; pure nav reducer |
-| **M4 — Context-aware `/help`** | 🔜 | `helpForView(view)` over M3's view set |
-| **M5 — `sophron init` Templates** | 🔜 | seeds per-project orchestrator + global architect template |
+| **M4 — Context-aware `/help`** | ✅ Complete | `helpForView(view)` over M3's 11 views; core + per-view sections; 21 tests |
+| **M5 — `sophron init` Templates** | ✅ Complete | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates; seeds standardized per-project orchestrator + global architect; 25 tests |
 | **M6 — `propose_roster`** | 🔜 | batch draft→approve→close; generalizes `propose_agent` |
 | **M7 — Global Orchestrator meta-layer** | 🔬 | the "CEO" agent above all projects (no memory) |
 | **M8 — Wire Global Orchestrator into TUI Home** | 🔬 | replaces the M3 Orchestrator tab stub with real chat |
@@ -163,39 +163,44 @@ Home tabs + Project View — with the Orchestrator chat slot reserved for M8.
 
 ---
 
-### M4 — Context-Aware `/help` 🔜
+### M4 — Context-Aware `/help` ✅
 **Why here:** the view set is defined by M3; help is `helpForView(view)` once
 those views exist. Cheap, coordinated change.
 
-**Scope:**
-- Replace the static `HELP_TEXT` with `helpForView(view)`.
-- Always-available core (`/help`, `/clear`, `/quit`, `/projects`, `/home`)
-  + per-view section (Agent › Chat → agent-directing commands: free-text,
-  `/approve`, `/interrupt`, `/rewind`).
+**Built (2026-07-07):** `src/tui/help.ts` — `helpForView(view)` +
+`helpViewFor(surface, homeTab, projectTab, detail)` (derives the active view
+from nav state). Every view returns the **core section** (navigation keys +
+always-available commands: `/help`, `/projects`, `/clear`, `/quit`) plus a
+**per-view section** specific to the 11 M3 views (home:overview/orchestrator/
+projects; project:status/agents/agentDetail/runs/runDetail/checkpoint/memory/
+cost). The `/help` handler in `app.tsx` computes the view from nav state and
+renders it. The old static `HELP_TEXT` is kept as a deprecated re-export.
+21 unit tests (pure logic). 522/522 total.
 
 ---
 
-### M5 — `sophron init` Templates 🔜
+### M5 — `sophron init` Templates ✅
 **Why here:** scaffolds a project's multi-agent structure from a curated starting
 point; **every template seeds the standardized per-project orchestrator** (a
 copy into the project's `agents/`) and installs the **global architect**
 template at `~/.sophron/agents/architect.md` (used by the global orchestrator
 in M7). Independent of M3 — can be built in parallel.
 
-**Scope:**
-- `sophron init [--template <name>] [--name <alias>] [--path <dir>]`.
-- Built-in templates (`webapp`, `cli`, `data-pipeline`, `minimal`) + user
-  templates under `~/.sophron/templates/<name>/`.
-- Each template ships a **standardized `orchestrator.md`** as its first agent,
-  plus template-specific starter agents.
-- Seed `.sophron/shared/` (`OVERVIEW.md`, `CHECKPOINTS.md`).
-- Default project path: `~/sophron_workspace/<name>`.
-- Idempotent: refuses to overwrite an existing `agents/` unless `--force`.
-- **Registers the project** in `~/.sophron/projects.json` with the `--name`
-  alias if given.
-- **Templates vs. runtime boundary:** templates are init-time scaffolding
-  (free to edit afterward, no approval gate). Runtime roster creation is M6
-  (draft→approval→closed).
+**Built (2026-07-07):** `src/init/templates.ts` — 4 built-in templates
+(`minimal`, `cli`, `webapp`, `data-pipeline`) + user template support under
+`~/.sophron/templates/<name>/`. Every scaffold seeds the **standardized
+`orchestrator.md`** (always) + the template's specialist agents + shared
+memory seeds (`OVERVIEW.md`, `CHECKPOINTS.md`).
+- `sophron init [--template <name>] [--name <alias>] [--path <dir>] [--force]`.
+- `sophron init --list` lists available templates.
+- `sophron init --install-architect` writes the global architect to
+  `~/.sophron/agents/architect.md` (used by M7).
+- Default path: `~/sophron_workspace/<name>`.
+- Idempotent: refuses to overwrite a non-empty `agents/` unless `--force`.
+- Registers the project in `~/.sophron/projects.json`.
+- **Templates vs. runtime boundary:** templates are init-time scaffolding (free
+  to edit afterward, no approval gate); runtime roster creation is M6.
+- 25 unit tests (pure logic). 547/547 total.
 
 **Delivers:** Phase 7's specialization kits *are* these templates; every
 project starts with a known-good orchestrator.
@@ -301,11 +306,7 @@ M9 (web UI) ── optional / parallel / deferred
 
 ## Starting point
 
-**M3 (TUI Shell rewrite)** is ✅ complete (501/501 tests). The next builds,
-either order (both unblocked):
-- **M4 (`/help`)** — cheap; `helpForView(view)` over M3's view set.
-- **M5 (`sophron init` templates)** — independent of M4; seeds the standardized
-  per-project orchestrator + global architect.
-
-Then **M6 (`propose_roster`)** → **M7 (global orchestrator)** → **M8 (wire into
-Home)**.
+M3 + M4 + M5 are ✅ complete (547/547 tests). **M6 (`propose_roster`)** is the
+next build — it generalizes the Phase 6 `propose_agent` to batch draft→approve
+and is the runtime companion to M5 templates. Then **M7 (global orchestrator)**
+→ **M8 (wire into Home)**.
