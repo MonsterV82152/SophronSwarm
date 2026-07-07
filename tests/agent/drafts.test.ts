@@ -190,3 +190,209 @@ describe("propose_agent tool", () => {
     ).toThrow(/Missing.*systemPrompt|Missing.*description/);
   });
 });
+
+describe("AgentDraftStore — batched roster (M6)", () => {
+  let dir: string;
+  let store: AgentDraftStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "sophron-roster-"));
+    store = new AgentDraftStore(dir);
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  describe("writeRoster", () => {
+    it("writes all drafts + ledger entries in one pass", () => {
+      store.writeRoster([
+        { name: "a", content: "---\nname: a\n---\nbody-a" },
+        { name: "b", content: "---\nname: b\n---\nbody-b" },
+      ]);
+      expect(store.draftFiles().sort()).toEqual(["a", "b"]);
+      expect(store.pendingDrafts().map((e) => e.name).sort()).toEqual(["a", "b"]);
+      expect(store.isBootstrapClosed()).toBe(false); // pending → still open
+    });
+
+    it("trims names", () => {
+      store.writeRoster([{ name: "  spaced  ", content: "x" }]);
+      expect(store.draftFiles()).toContain("spaced");
+    });
+
+    it("refuses an empty roster", () => {
+      expect(() => store.writeRoster([])).toThrow(/at least one/);
+    });
+
+    it("refuses duplicate names within the batch (atomically — nothing written)", () => {
+      expect(() =>
+        store.writeRoster([
+          { name: "dup", content: "x" },
+          { name: "dup", content: "y" },
+        ]),
+      ).toThrow(/Duplicate name in roster/);
+      // Atomicity: no files, no ledger entries.
+      expect(store.draftFiles()).toEqual([]);
+      expect(store.pendingDrafts()).toEqual([]);
+    });
+
+    it("refuses if bootstrap is closed (atomically)", () => {
+      store.writeRoster([{ name: "a", content: "x" }]);
+      store.approve("a"); // closes bootstrap
+      expect(() =>
+        store.writeRoster([{ name: "b", content: "y" }]),
+      ).toThrow(/closed/);
+      expect(store.draftFiles()).toEqual([]); // nothing written
+    });
+
+    it("refuses to re-draft an already-resolved agent (atomically)", () => {
+      store.writeRoster([{ name: "a", content: "x" }]);
+      store.approve("a");
+      expect(() =>
+        store.writeRoster([
+          { name: "a", content: "new" },
+          { name: "b", content: "ok" },
+        ]),
+      ).toThrow(/already approved/);
+      // Atomicity: 'b' (which was valid) must NOT have been written.
+      expect(store.draftFiles()).toEqual([]);
+      expect(store.pendingDrafts()).toEqual([]);
+    });
+
+    it("allows re-drafting an entry that is still 'draft' (updating it)", () => {
+      store.writeRoster([{ name: "a", content: "v1" }]);
+      // Re-writing a still-draft entry updates its content + timestamp.
+      store.writeRoster([{ name: "a", content: "v2" }]);
+      expect(readFileSync(join(dir, DRAFT_DIR_NAME, "a.md"), "utf8")).toBe("v2");
+      expect(store.pendingDrafts().length).toBe(1); // no duplicate ledger entry
+    });
+
+    it("refuses an entry with an empty name", () => {
+      expect(() => store.writeRoster([{ name: "   ", content: "x" }])).toThrow(/missing or empty name/);
+    });
+  });
+
+  describe("approveMany", () => {
+    it("promotes all named drafts to agents/ in one ledger write", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+      ]);
+      store.approveMany(["a", "b"]);
+      expect(existsSync(join(dir, "agents", "a.md"))).toBe(true);
+      expect(existsSync(join(dir, "agents", "b.md"))).toBe(true);
+      expect(existsSync(join(dir, DRAFT_DIR_NAME, "a.md"))).toBe(false);
+      expect(existsSync(join(dir, DRAFT_DIR_NAME, "b.md"))).toBe(false);
+      const ledger = store.readLedger();
+      expect(ledger.entries.every((e) => e.status === "approved")).toBe(true);
+      expect(ledger.bootstrapClosed).toBe(true); // all resolved → closed
+    });
+
+    it("closes bootstrap only when ALL drafts are resolved", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+        { name: "c", content: "z" },
+      ]);
+      store.approveMany(["a", "b"]);
+      expect(store.isBootstrapClosed()).toBe(false); // c still pending
+      store.reject("c");
+      expect(store.isBootstrapClosed()).toBe(true);
+    });
+
+    it("is atomic: an unknown name resolves NOTHING", () => {
+      store.writeRoster([{ name: "a", content: "x" }]);
+      expect(() => store.approveMany(["a", "ghost"])).toThrow(/No draft named 'ghost'/);
+      // 'a' must NOT have been promoted — the batch failed atomically.
+      expect(existsSync(join(dir, "agents", "a.md"))).toBe(false);
+      expect(existsSync(join(dir, DRAFT_DIR_NAME, "a.md"))).toBe(true);
+      const ledger = store.readLedger();
+      expect(ledger.entries.find((e) => e.name === "a")?.status).toBe("draft");
+    });
+
+    it("is atomic: an already-resolved name resolves NOTHING", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+      ]);
+      store.approve("a");
+      expect(() => store.approveMany(["a", "b"])).toThrow(/already approved/);
+      // 'b' must still be a draft.
+      expect(store.readLedger().entries.find((e) => e.name === "b")?.status).toBe("draft");
+      expect(existsSync(join(dir, DRAFT_DIR_NAME, "b.md"))).toBe(true);
+    });
+
+    it("returns [] for an empty name list (no-op)", () => {
+      store.writeRoster([{ name: "a", content: "x" }]);
+      expect(store.approveMany([])).toEqual([]);
+      expect(store.readLedger().entries.find((e) => e.name === "a")?.status).toBe("draft");
+    });
+  });
+
+  describe("rejectMany", () => {
+    it("deletes all named draft files + marks rejected", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+      ]);
+      store.rejectMany(["a", "b"]);
+      expect(existsSync(join(dir, DRAFT_DIR_NAME, "a.md"))).toBe(false);
+      expect(existsSync(join(dir, DRAFT_DIR_NAME, "b.md"))).toBe(false);
+      expect(store.readLedger().entries.every((e) => e.status === "rejected")).toBe(true);
+      expect(store.isBootstrapClosed()).toBe(true);
+    });
+  });
+
+  describe("approveAll / rejectAll", () => {
+    it("approveAll promotes every pending draft", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+      ]);
+      const resolved = store.approveAll();
+      expect(resolved.map((e) => e.name).sort()).toEqual(["a", "b"]);
+      expect(readdirSync(join(dir, "agents")).sort()).toEqual(["a.md", "b.md"]);
+      expect(store.isBootstrapClosed()).toBe(true);
+    });
+
+    it("rejectAll deletes every pending draft", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+      ]);
+      const resolved = store.rejectAll();
+      expect(resolved.map((e) => e.name).sort()).toEqual(["a", "b"]);
+      expect(store.draftFiles()).toEqual([]);
+      expect(existsSync(join(dir, "agents"))).toBe(false);
+      expect(store.isBootstrapClosed()).toBe(true);
+    });
+
+    it("approveAll is a no-op (returns []) when there are no pending drafts", () => {
+      expect(store.approveAll()).toEqual([]);
+      expect(store.rejectAll()).toEqual([]);
+    });
+
+    it("approveAll only resolves pending drafts (leaves already-resolved alone)", () => {
+      store.writeRoster([
+        { name: "a", content: "x" },
+        { name: "b", content: "y" },
+        { name: "c", content: "z" },
+      ]);
+      store.reject("b"); // resolve one ahead of time
+      const resolved = store.approveAll();
+      expect(resolved.map((e) => e.name).sort()).toEqual(["a", "c"]);
+      expect(store.readLedger().entries.find((e) => e.name === "b")?.status).toBe("rejected");
+      expect(store.isBootstrapClosed()).toBe(true);
+    });
+  });
+
+  it("batch round-trips with a second store instance (persistence)", () => {
+    store.writeRoster([
+      { name: "a", content: "x" },
+      { name: "b", content: "y" },
+    ]);
+    const store2 = new AgentDraftStore(dir);
+    expect(store2.pendingDrafts().map((e) => e.name).sort()).toEqual(["a", "b"]);
+    store2.approveAll();
+    const store3 = new AgentDraftStore(dir);
+    expect(store3.isBootstrapClosed()).toBe(true);
+    expect(store3.pendingDrafts()).toEqual([]);
+  });
+});

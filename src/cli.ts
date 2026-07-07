@@ -4,6 +4,11 @@
  * Usage:
  *   sophron run <agent-name> "<task>" [--dir <path>]
  *   sophron agents                          list loaded agent definitions
+ *   sophron agents --drafts                 list pending agent drafts (M6)
+ *   sophron agents --approve <n> [n...]     approve draft(s) (M6)
+ *   sophron agents --reject <n> [n...]      reject draft(s) (M6)
+ *   sophron agents --approve-all            approve ALL pending drafts (M6)
+ *   sophron agents --reject-all             reject ALL pending drafts (M6)
  *   sophron replay <runId-or-file>          print a run's JSONL events
  */
 import { Command } from "commander";
@@ -14,6 +19,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
 import { listProviders, getProvider } from "./llm/providers.js";
 import { AgentRegistry } from "./agent/registry.js";
+import { AgentDraftStore } from "./agent/drafts.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject } from "./project/registry.js";
 import { scaffoldProject, installGlobalArchitect, listTemplates } from "./init/templates.js";
@@ -105,21 +111,107 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("agents")
-    .description("List loaded agent definitions")
-    .action(() => {
+    .description("List loaded agent definitions; manage pending agent drafts (M6)")
+    .option("-d, --dir <path>", "working directory", process.cwd())
+    .option("--drafts", "list pending agent drafts awaiting approval")
+    .option("--approve <names...>", "approve one or more drafts by name (promotes to agents/)")
+    .option("--reject <names...>", "reject one or more drafts by name (deletes the draft)")
+    .option("--approve-all", "approve ALL pending drafts")
+    .option("--reject-all", "reject ALL pending drafts")
+    .action((opts: {
+      dir: string;
+      drafts?: boolean;
+      approve?: string[];
+      reject?: string[];
+      approveAll?: boolean;
+      rejectAll?: boolean;
+    }) => {
+      const workingDir = resolve(opts.dir);
+      const store = new AgentDraftStore(workingDir);
+
+      // ── Draft-management paths (M6) ────────────────────────────────────
+      const wantsDraftAction =
+        opts.drafts || opts.approveAll || opts.rejectAll ||
+        (opts.approve && opts.approve.length > 0) || (opts.reject && opts.reject.length > 0);
+      if (wantsDraftAction) {
+        if (opts.approveAll && opts.rejectAll) {
+          console.error(chalk.red("--approve-all and --reject-all are mutually exclusive."));
+          process.exitCode = 1;
+          return;
+        }
+        if (opts.drafts) {
+          const pending = store.pendingDrafts();
+          if (pending.length === 0) {
+            console.log(chalk.gray("No pending agent drafts. Bootstrap is " +
+              (store.isBootstrapClosed() ? "closed." : "open (none drafted yet).")));
+          } else {
+            console.log(chalk.bold(`${pending.length} pending agent draft(s) awaiting approval:`));
+            for (const e of pending) {
+              console.log(chalk.cyan(`  ${e.name}`) + chalk.gray(`  (drafted ${e.createdAt})`));
+            }
+            const first = pending[0];
+            console.log(chalk.gray(`\nApprove with: sophron agents --approve${pending.length > 1 ? "-all" : ` ${first?.name ?? ""}`}`));
+          }
+          return;
+        }
+        if (opts.approveAll) {
+          const resolved = store.approveAll();
+          if (resolved.length === 0) { console.log(chalk.gray("No pending drafts to approve.")); return; }
+          console.log(chalk.green(`Approved ${resolved.length} draft(s): ${resolved.map((e) => e.name).join(", ")}`));
+          if (store.isBootstrapClosed()) console.log(chalk.gray("Bootstrap creation is now closed (all drafts resolved)."));
+          return;
+        }
+        if (opts.rejectAll) {
+          const resolved = store.rejectAll();
+          if (resolved.length === 0) { console.log(chalk.gray("No pending drafts to reject.")); return; }
+          console.log(chalk.yellow(`Rejected ${resolved.length} draft(s): ${resolved.map((e) => e.name).join(", ")}`));
+          if (store.isBootstrapClosed()) console.log(chalk.gray("Bootstrap creation is now closed (all drafts resolved)."));
+          return;
+        }
+        if (opts.approve && opts.approve.length > 0) {
+          try {
+            const resolved = store.approveMany(opts.approve);
+            console.log(chalk.green(`Approved ${resolved.length} draft(s): ${resolved.map((e) => e.name).join(", ")}`));
+            if (store.isBootstrapClosed()) console.log(chalk.gray("Bootstrap creation is now closed (all drafts resolved)."));
+          } catch (e) {
+            console.error(chalk.red(`Could not approve: ${(e as Error).message}`));
+            process.exitCode = 1;
+          }
+          return;
+        }
+        if (opts.reject && opts.reject.length > 0) {
+          try {
+            const resolved = store.rejectMany(opts.reject);
+            console.log(chalk.yellow(`Rejected ${resolved.length} draft(s): ${resolved.map((e) => e.name).join(", ")}`));
+            if (store.isBootstrapClosed()) console.log(chalk.gray("Bootstrap creation is now closed (all drafts resolved)."));
+          } catch (e) {
+            console.error(chalk.red(`Could not reject: ${(e as Error).message}`));
+            process.exitCode = 1;
+          }
+          return;
+        }
+      }
+
+      // ── Default: list loaded agents ────────────────────────────────────
       const registry = new AgentRegistry();
       const scan = registry.scan();
       if (scan.agents.length === 0) {
         console.log(chalk.gray("No agents loaded. Add a .md file under agents/ or ~/.sophron/agents/."));
-        return;
+      } else {
+        for (const a of scan.agents) {
+          console.log(chalk.bold(a.name) + chalk.gray(`  [${a.source}]  ${a.model}`));
+          console.log(chalk.gray(`  ${a.description}`));
+        }
+        if (scan.errors.length) {
+          console.warn(chalk.yellow(`\n${scan.errors.length} agent file(s) failed to load:`));
+          for (const e of scan.errors) console.warn(chalk.gray(`  ${e.filePath}: ${e.error}`));
+        }
       }
-      for (const a of scan.agents) {
-        console.log(chalk.bold(a.name) + chalk.gray(`  [${a.source}]  ${a.model}`));
-        console.log(chalk.gray(`  ${a.description}`));
-      }
-      if (scan.errors.length) {
-        console.warn(chalk.yellow(`\n${scan.errors.length} agent file(s) failed to load:`));
-        for (const e of scan.errors) console.warn(chalk.gray(`  ${e.filePath}: ${e.error}`));
+
+      // Surface pending drafts as a hint when listing (if any exist).
+      const pending = store.pendingDrafts();
+      if (pending.length > 0) {
+        console.log(chalk.cyan(`\n${pending.length} agent draft(s) awaiting approval. Run 'sophron agents --drafts' to review.`));
       }
     });
 

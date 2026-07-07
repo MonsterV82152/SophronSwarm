@@ -13,7 +13,7 @@
  *
  * See docs/ROADMAP.md (M3).
  */
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { resolve } from "node:path";
 import { parseSlashCommand } from "./slashCommands.js";
@@ -105,8 +105,12 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
     return () => clearInterval(t);
   }, []);
 
+  // Use a ref to maintain a monotonically increasing ID counter for output blocks.
+  // This prevents duplicate keys when the array is sliced to keep only the last 6 items.
+  const blockIdRef = useRef(0);
   const pushBlock = useCallback((text: string, color?: string) => {
-    setBlocks((prev) => [...prev.slice(-6), { id: prev.length, text, color }]);
+    const id = blockIdRef.current++;
+    setBlocks((prev) => [...prev.slice(-6), { id, text, color }]);
   }, []);
 
   // Dispatch a nav action (clamps list selections against current data sizes).

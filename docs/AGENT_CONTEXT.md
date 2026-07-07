@@ -68,7 +68,8 @@ V3/
 │   │   ├── loop.ts          # THE AGENTIC LOOP (the heart) — pulls memory from services into prompt
 │   │   ├── delegation.ts    # checkPolicy (depth+cycle+allowlist), buildChildCtx, buildHandoffPacket, formatHandoffPacket
 │   │   ├── autoGate.ts      # LlmAutoModeClassifier (cheap model vets commands) + AutoPermissionGate (Phase 6)
-│   │   └── drafts.ts        # AgentDraftStore — draft→approve ledger for agent creation (Phase 6)
+│   │   ├── drafts.ts        # AgentDraftStore — draft→approve ledger (Phase 6) + transactional batch roster (M6: writeRoster/approveMany/approveAll)
+│   │   └── serialize.ts     # serializeDraft + yamlString — shared by propose_agent + propose_roster (M6)
 │   ├── memory/              # Phase 3 — three-tier memory layer
 │   │   ├── sections.ts      # ## -section parse/serialize/edit + dedup helpers (shared by both stores)
 │   │   ├── sharedStore.ts   # .sophron/shared/*.md (file + section level, toInjectionMap)
@@ -102,7 +103,7 @@ V3/
 │   │   ├── purifier.ts      # M1: Tier1 deterministic + Tier2 cheap-model filter; raw→.sophron/raw/ (LRU); never throws
 │   │   └── builtin/
 │   │       ├── paths.ts           # safeResolve (path-traversal guard)
-│   │       ├── index.ts           # registers all 11 built-in tools (incl. read_raw_output)
+│   │       ├── index.ts           # registers all 13 built-in tools (incl. propose_roster + read_raw_output)
 │   │       ├── echo.ts, read_file.ts, write_file.ts, list_dir.ts  (in index.ts)
 │   │       ├── run_command.ts     # shell under sandbox + dangerous-command blocker
 │   │       ├── apply_patch.ts     # unified-diff applier
@@ -110,7 +111,8 @@ V3/
 │   │       ├── remember.ts        # write to per-agent or shared memory (Phase 3)
 │   │       ├── advance_checkpoint.ts  # mark current milestone done, advance (Phase 3)
 │   │       ├── mcp_tool_search.ts     # lazy MCP meta-tool: search→promote (Phase 4)
-│   │       ├── propose_agent.ts       # Architect drafts agent for operator approval (Phase 6)
+│   │       ├── propose_agent.ts       # Architect drafts a SINGLE agent for operator approval (Phase 6)
+│   │       ├── propose_roster.ts      # M6: Architect drafts the FULL roster in one pass (one approval gate)
 │   │       └── read_raw_output.ts     # M1 escape hatch: retrieve full raw tool output
 │   ├── sandbox/
 │   │   ├── backend.ts             # ExecutionBackend interface + getBackend() factory

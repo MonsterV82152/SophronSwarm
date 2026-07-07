@@ -4,9 +4,10 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-07):** 547/547 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-07):** 597/597 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
-> + M4 (context-aware `/help`) + M5 (`sophron init` templates) complete.
+> + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
+> (`propose_roster` batch bootstrap) complete.
 >
 > **Last updated:** 2026-07-07
 
@@ -64,7 +65,7 @@ SophronSwarm (global)                          ← operator's home
 | **M3 — TUI Shell (rewrite)** | ✅ Complete | box-chrome tabbed Home (Overview/Orchestrator-stub/Projects) + Project View (Status/Agents/Runs/Checkpoint/Memory/Cost) + Agent detail with live JSONL-tail stream; pure nav reducer |
 | **M4 — Context-aware `/help`** | ✅ Complete | `helpForView(view)` over M3's 11 views; core + per-view sections; 21 tests |
 | **M5 — `sophron init` Templates** | ✅ Complete | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates; seeds standardized per-project orchestrator + global architect; 25 tests |
-| **M6 — `propose_roster`** | 🔜 | batch draft→approve→close; generalizes `propose_agent` |
+| **M6 — `propose_roster`** | ✅ Complete | batch draft→approve→close (transactional `writeRoster`); `sophron agents --drafts/--approve*/--reject*`; 50 tests |
 | **M7 — Global Orchestrator meta-layer** | 🔬 | the "CEO" agent above all projects (no memory) |
 | **M8 — Wire Global Orchestrator into TUI Home** | 🔬 | replaces the M3 Orchestrator tab stub with real chat |
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
@@ -207,18 +208,32 @@ project starts with a known-good orchestrator.
 
 ---
 
-### M6 — Architect Roster Bootstrap (`propose_roster`) 🔜
+### M6 — Architect Roster Bootstrap (`propose_roster`) ✅
 **Why here:** builds on M5 templates + the existing `propose_agent` flow;
 generalizes single-agent draft→approve to a batch.
 
-**Scope:**
-- `propose_roster` tool — the Architect reads project requirements, drafts **N**
-  agents in one pass, one operator approval gate covers the whole roster, then
-  bootstrap closes. Matches the locked policy in `PROJECT_OVERVIEW.md` §5.1.
-- Extend `AgentDraftStore` (`src/agent/drafts.ts`) for batched rosters.
-- Batch-approval UI (list N drafts: accept-all / accept-selected / reject).
+**Built (2026-07-07):** `propose_roster` drafts **N** agents in ONE pass behind
+ONE operator approval gate, then bootstrap closes. It is the runtime companion
+to M5 templates — a project bootstraps either from a template (M5) or from
+scratch via the architect (M6).
+- `src/agent/drafts.ts` — `AgentDraftStore` extended with **transactional batch
+  methods**: `writeRoster(drafts[])` (validates ALL entries before touching the
+  filesystem — all-or-nothing), `approveMany(names[])` / `rejectMany(names[])`
+  (one ledger write; atomic — a bad name resolves NOTHING), `approveAll()` /
+  `rejectAll()` (resolve every pending draft).
+- `src/agent/serialize.ts` (NEW) — `serializeDraft()` + `yamlString()` extracted
+  from `propose_agent.ts` so both the single + batch tools share one serializer.
+- `src/tools/builtin/propose_roster.ts` (NEW) — the batch tool. Takes an
+  `agents[]` array (+ optional `summary`); serializes + validates every entry up
+  front (refuses the whole batch if ANY entry is bad: missing field, `full-auto`,
+  duplicate name); warns when the resulting roster exceeds the 12-agent soft cap.
 - Guardrails preserved from Phase 6: no `full-auto` drafts, no re-drafting
-  resolved agents, no auto-approval.
+  resolved agents (checked **before** the closed-check, matching `writeDraft`),
+  no auto-approval, bootstrap closes when all drafts resolve.
+- **CLI batch approval:** `sophron agents --drafts` lists pending; `--approve
+  <names...>` / `--reject <names...>` resolve a subset; `--approve-all` /
+  `--reject-all` resolve everything. Listing surfaces a pending-draft hint.
+- 50 new tests (16 serialize + 23 drafts-batch + 11 propose_roster). 597/597 total.
 
 **Delivers:** the runtime companion to M5 templates — a project can be
 bootstrapped either from a template (M5) or from scratch via the architect
@@ -291,9 +306,9 @@ when the CLI vision (M3–M8) is stable.
 M1 ✅ (purifier)  ─┐
 M2 ✅ (providers)  ─┴─ done
 
-M5 (templates) ─► M6 (propose_roster) ─► M7 (global orchestrator) ──┐
-                                                                     ├─► M8 (wire into Home)
-M3 (TUI shell rewrite) ─► M4 (/help)                                 ┘
+M5 ✅ (templates) ─► M6 ✅ (propose_roster) ─► M7 (global orchestrator) ──┐
+                                                                          ├─► M8 (wire into Home)
+M3 ✅ (TUI shell rewrite) ─► M4 ✅ (/help)                                 ┘
 
 M9 (web UI) ── optional / parallel / deferred
 ```
@@ -301,12 +316,13 @@ M9 (web UI) ── optional / parallel / deferred
 - **M5 / M3** are both unblocked now and **independent** of each other — they
   can be built in parallel.
 - **M4** depends on **M3** (its view set).
-- **M6** depends on **M5**; **M7** depends on **M5 + M6**; **M8** depends on
-  **M3 + M7**.
+- **M6** depends on **M5** (done); **M7** depends on **M5 + M6** (both done —
+  unblocked); **M8** depends on **M3 + M7**.
 
 ## Starting point
 
-M3 + M4 + M5 are ✅ complete (547/547 tests). **M6 (`propose_roster`)** is the
-next build — it generalizes the Phase 6 `propose_agent` to batch draft→approve
-and is the runtime companion to M5 templates. Then **M7 (global orchestrator)**
-→ **M8 (wire into Home)**.
+M3 + M4 + M5 + M6 are ✅ complete (597/597 tests). **M7 (global orchestrator
+meta-layer)** is the next build — the "CEO" agent above all projects that
+delegates to the global architect (which uses M6's `propose_roster` to draft a
+new project's roster). Then **M8 (wire into Home)** replaces the M3
+Orchestrator-tab stub with the real chat + project-proposal flow.
