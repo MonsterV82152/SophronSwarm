@@ -291,3 +291,88 @@ export function readRunDetail(workspaceDir: string, runIdOrPrefix: string): RunD
   if (!agent && events.length === 0) return null;
   return { runId, agent, status, task, turns, tokens, events };
 }
+
+// ── Overview (cross-project health, for the Home Overview tab) ──────────────
+
+import { listProjects, type ProjectEntry } from "../project/registry.js";
+
+/** Per-project health summary, used in the Home Overview aggregate. */
+export interface ProjectHealth {
+  name: string;
+  path: string;
+  pinned: boolean;
+  /** Number of run JSONL files found under <path>/runs/. */
+  runCount: number;
+  /** Tokens from the most recent run's run_end totalUsage (0 if none). */
+  lastRunTokens: number;
+  /** Status of the most recent run ("complete" / "error" / "running" / "?"). */
+  lastRunStatus: string;
+  /** Whether the most recent run ended in error. */
+  lastRunFailed: boolean;
+}
+
+/**
+ * The aggregate overview shown on the Home surface's Overview tab.
+ *
+ * Pure (no side effects beyond reads). Never throws — missing data degrades to
+ * zeros. Reads each project's `runs/` directory for run summaries.
+ */
+export interface OverviewModel {
+  projects: ProjectHealth[];
+  totalProjects: number;
+  totalRuns: number;
+  totalTokens: number;
+  failedRuns: number;
+  /** Projects whose most recent run failed (the "needs attention" set). */
+  needingAttention: string[];
+  /** Approvals pending in the *currently active* project (cross-project
+   *  approval aggregation needs a global approvals store; for now we surface
+   *  the active project's count). */
+  activeApprovalsPending: number;
+}
+
+/**
+ * Build the cross-project overview model by scanning every registered
+ * project's `runs/` directory. `activeApprovalsPending` is passed in by the
+ * caller (from the active project's ApprovalsQueue).
+ *
+ * Pure (reads only). Never throws.
+ */
+export function buildOverview(activeApprovalsPending: number): OverviewModel {
+  const projects = listProjects();
+  const health: ProjectHealth[] = projects.map((p) => projectHealth(p));
+
+  const totalRuns = health.reduce((sum, h) => sum + h.runCount, 0);
+  const totalTokens = health.reduce((sum, h) => sum + h.lastRunTokens, 0);
+  const failedRuns = health.filter((h) => h.lastRunFailed).length;
+  const needingAttention = health.filter((h) => h.lastRunFailed).map((h) => h.name);
+
+  return {
+    projects: health,
+    totalProjects: projects.length,
+    totalRuns,
+    totalTokens,
+    failedRuns,
+    needingAttention,
+    activeApprovalsPending,
+  };
+}
+
+/** Compute health for a single project from its on-disk run logs. Pure. */
+function projectHealth(entry: ProjectEntry): ProjectHealth {
+  const runs = readRecentRuns(entry.path, 1);
+  const allRuns = readRecentRuns(entry.path, 1000);
+  const last = runs[0];
+  const lastRunTokens = last?.tokens ?? 0;
+  const lastRunStatus = last?.status ?? "(no runs)";
+  const lastRunFailed = last?.status === "error" || last?.status === "halt";
+  return {
+    name: entry.name,
+    path: entry.path,
+    pinned: entry.pinned ?? false,
+    runCount: allRuns.length,
+    lastRunTokens,
+    lastRunStatus,
+    lastRunFailed,
+  };
+}

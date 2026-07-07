@@ -5,7 +5,7 @@
 > isn't lost between sessions. Each entry has a status and a proposed approach
 > that can be debated before implementation.
 >
-> **Last updated:** 2026-07-06
+> **Last updated:** 2026-07-07
 
 ---
 
@@ -100,7 +100,17 @@ LocalAI, TGI, llama.cpp server).
 
 ---
 
-## 2. Project-scoped TUI navigation — ✅ BUILT (M3, core)
+## 2. Project-scoped TUI navigation — 🔨 REWRITE (M3) + 🔬 global-orchestrator extension (M7/M8)
+
+> **Status update (2026-07-07):** the *first* M3 attempt shipped (project
+> registry + `switchServices` + overlay switcher, 473 tests) but the navigation
+> UX is **broken and confusing** and is being **fully rewritten**. The
+> registry (`src/project/registry.ts`) and services teardown/rebuild
+> (`src/services/lifecycle.ts`) are **reused**; only the UX on top is replaced.
+> The design below is the **original** proposal — the rewrite replaces it with
+> the **box-chrome tabbed shell** described in `ROADMAP.md` (M3) and folds in
+> the **two-tier global-orchestrator vision** (§6 below). See `ROADMAP.md` M3
+> + M7 + M8 for the current, authoritative scope.
 
 ### The question
 Operator vision: `Home (everything) → Projects (list) → Project 1 (agents,
@@ -265,6 +275,12 @@ template.
 This is a natural first deliverable of Phase 7 (specialization kits) — the kits
 *are* essentially templates.
 
+> **Update (2026-07-07):** every template now **seeds a standardized
+> `orchestrator.md`** as its first agent (the per-project orchestrator) and
+> installs a **global `architect.md`** at `~/.sophron/agents/architect.md`
+> (used by the global orchestrator in §6). Default project path is
+> `~/sophron_workspace/<name>`. See `ROADMAP.md` M5.
+
 ### Spec (three pieces)
 
 **Piece 1 — `sophron init [--template <name>] [--name <alias>]` (low-risk):**
@@ -288,7 +304,8 @@ This is a natural first deliverable of Phase 7 (specialization kits) — the kit
 - **Architect bootstrap** = runtime capability, draft→approval→closed.
   Prevents self-modifying swarms (§5.1 / §7.1).
 - Different layers (scaffolding vs. runtime creation); they do **not** conflict
-  once framed this way. Write the distinction into the Phase 7 design doc.
+  once framed this way. The authoritative scope for both pieces now lives in
+  `ROADMAP.md` (M5 = templates, M6 = `propose_roster`).
 
 ### Where it touches the code
 - `src/cli.ts` — new `init` subcommand.
@@ -305,7 +322,14 @@ This is a natural first deliverable of Phase 7 (specialization kits) — the kit
 
 ---
 
-## 5. Output purifier — deterministic-first filter pipeline — 📦 Ready to build
+## 5. Output purifier — deterministic-first filter pipeline — ✅ BUILT (M1)
+
+> **Built 2026-07-06.** Shape is exactly the two-tier deterministic-first
+> filter below, wired into the `ToolDispatcher.dispatch` chokepoint. Tier 2
+> reuses the auto-classifier model (`ollama:qwen3.5:9b-fast`). Raw output is
+> stored under `.sophron/raw/` (50 MB LRU) and retrievable via the
+> `read_raw_output` builtin. See `ROADMAP.md` M1 + repo memory for details.
+> The spec below is kept as the design record.
 
 ### Vision
 Tool output is the #1 context-bloater: a noisy `cargo build` with 50 warnings,
@@ -391,24 +415,71 @@ an LLM's judgment is required" (§0 of `AGENT_CONTEXT.md`).
 
 ---
 
+## 6. Global orchestrator + two-tier hierarchy — 🔬 Proposed (→ M7/M8)
+
+### Vision
+SophronSwarm is **multi-project**: there is one **global orchestrator** that
+lives *above* all projects (the operator's "CEO"), plus a **per-project
+orchestrator** inside each project (seeded by `sophron init`, §4). The global
+orchestrator is what the operator talks to from the Home › Orchestrator tab to
+propose and create whole projects.
+
+### Locked decisions (2026-07-07)
+- **Global orchestrator has NO memory.** No per-agent `MEMORY.md`, no
+  shared-memory injection. It reads the project registry (`list_projects`) and
+  the current chat thread — nothing else. It is a pure project-lifecycle
+  manager and must not inherit or interfere with any project's memory.
+- **Per-project orchestrator = a copy.** `sophron init` seeds an identical
+  `orchestrator.md` into every project's `agents/`; each copy is independently
+  editable and carries its own per-project memory.
+- **Scoped tool set:** `delegate` (to the global architect), `list_projects`,
+  `propose_project`, `init_project` (controlled scaffolding, not raw shell),
+  read-only `read_file` / `list_dir` over `~/.sophron/`. **No** `run_command`
+  / `apply_patch`.
+- **Projects live at `~/sophron_workspace/<name>`.**
+- **Project-creation flow:** operator proposes idea → global orchestrator
+  delegates to global architect → architect drafts roster via M6
+  `propose_roster` → operator approves → `init_project` scaffolds + seeds the
+  standardized orchestrator → registered in `projects.json`.
+- **Global architect:** a single `architect.md` at user scope (installed by M5)
+  that drafts rosters for any new project. This *is* the M6 `propose_roster`
+  capability, invoked at bootstrap time.
+
+### Where it touches the code
+- New agent `~/.sophron/agents/global-orchestrator.md` (distinct from the
+  per-project orchestrator).
+- Loader: a way to mark an agent as **memory-less** (skip per-agent + shared
+  injection).
+- New tools: `propose_project`, `init_project`, `list_projects`.
+- TUI Home: replace the M3 Orchestrator-tab stub with the real chat +
+  project-proposal flow (M8).
+
+### Open questions
+- Should the global orchestrator's *chat history* persist across sessions?
+  (It has no memory tier, but the conversation list in the Orchestrator tab
+  implies persistence. Recommend: yes — persist chat threads, but do NOT inject
+  them as "memory"; they're just the conversation.)
+- Health-check definitions for the Home Overview: recommend concrete signals —
+  failed/stuck runs, pending approvals older than N, token-budget breaches,
+  agents in HALT.
+
+---
+
 ## Sequencing recommendation
 
-If all five are pursued, a sensible order:
+The authoritative, current plan lives in [`ROADMAP.md`](./ROADMAP.md) (M1–M9).
+Summary of how these IDEAS items map to milestones and order:
 
-1. **Output purifier (#5)** — highest immediate token-cost impact, single
-   chokepoint, independent. Win compounds with every other feature.
-2. **Named providers (#1)** — backward-compatible refactor; unblocks
-   multi-machine and generic OpenAI-compat endpoints. Small, well-scoped,
-   independent.
-3. **Project-scoped TUI navigation (#2)** — the bigger TUI restructure; makes
-   the multi-project vision real. Depends on the project registry + services
-   teardown/rebuild.
-4. **Context-aware `/help` (#3)** — folds into #2 (same view set); cheap once
-   nav lands.
-5. **`sophron init` templates (#4, Piece 1)** — natural first Phase 7
-   deliverable; registers projects (ties to #2).
-6. **Architect roster bootstrap (#4, Piece 2)** — builds on templates + the
-   existing `propose_agent`; larger scope, do last.
+1. **Output purifier (#5)** — ✅ DONE (M1).
+2. **Named providers (#1)** — ✅ DONE (M2).
+3. **TUI shell rewrite (#2)** — 🔨 next (M3); unblocks `/help` (#3 → M4) and
+   the global-orchestrator chat wiring (M8).
+4. **`sophron init` templates (#4, Piece 1)** — 🔜 M5; independent of M3, can
+   build in parallel. Now also seeds the standardized orchestrator.
+5. **Architect roster bootstrap (#4, Piece 2)** — 🔜 M6; depends on M5.
+6. **Global orchestrator + two-tier hierarchy (#6)** — 🔬 M7; depends on M5+M6.
+7. **Wire global orchestrator into TUI Home (#6 UI)** — 🔬 M8; depends on M3+M7.
+8. **Context-aware `/help` (#3)** — 🔜 M4; any time after M3.
 
-Items 1, 2, and 5 are independent and can be interleaved with phase work
-without disruption. Items 3, 4, and 6 have dependencies (3→2, 5→2, 6→5).
+Independent tracks: **M3** (TUI) and **M5** (templates) can proceed in
+parallel; everything else chains off them.

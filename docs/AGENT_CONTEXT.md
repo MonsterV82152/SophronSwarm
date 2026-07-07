@@ -2,8 +2,8 @@
 
 > **Purpose:** A self-contained brief that gives another AI agent full context to continue developing SophronSwarm V3. Read this top to bottom before writing any code.
 >
-> **Last updated:** 2026-07-06
-> **Current state:** Phases 0–5a + 6 complete (384/384 tests passing, clean `tsc`). Phase 5b (web UI) + Phase 7 (specialization kits) next.
+> **Last updated:** 2026-07-07
+> **Current state:** Phases 0–6 complete. Milestones **M1 (output purifier)** and **M2 (named providers)** complete. **M3 (TUI) shipped a first attempt but is being fully rewritten** (UX broken/confusing). 473/473 tests passing, clean `tsc`. Next: M3 rewrite (+ M5 templates in parallel). See [`ROADMAP.md`](./ROADMAP.md) for the authoritative M1–M9 plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
 
 ---
 
@@ -34,7 +34,13 @@
 | **Agent creation** | One-time bootstrap; architect drafts full roster; ALL drafts require operator approval; then closed | Prevents uncontrolled self-modifying swarms |
 | **MCP** | Lazy by default (`alwaysExpose:false`) + `mcp_tool_search` meta-tool | MCP token sprawl is the silent budget killer |
 | **Agent soft cap** | Warn (don't block) at >12 agents per workspace | Keeps org chart navigable |
-| **Auto-mode classifier** | Small local Ollama model for per-command vetting | Free, offline, low-latency |
+| **Auto-mode classifier** | `ollama:qwen3.5:9b-fast` vets each mutating command; also reused by the M1 purifier Tier 2 | Free, offline, low-latency |
+| **Output purifier (M1)** | Deterministic Tier 1 + cheap-model Tier 2, wired into `ToolDispatcher.dispatch`; raw output kept under `.sophron/raw/` + `read_raw_output` escape hatch | Compresses noisy tool output before it enters history |
+| **Providers (M2)** | Free-form **named provider instances** (`{name, kind, baseURL, ...}`); `${VAR}` env expansion; `provider:` frontmatter; legacy auto-migrated | One machine → many endpoints; multi-machine Ollama |
+| **Hierarchy (2026-07-07)** | **Two-tier:** one **global orchestrator** above all projects (`~/.sophron/`) + a **per-project orchestrator** seeded into each project's `agents/` by `sophron init` | SophronSwarm is multi-project; the global one is the operator's "CEO" |
+| **Global orchestrator memory** | **NONE.** Reads only the project registry + current chat thread. No per-agent / shared memory injection | Prevents cross-project interference; it starts/designs projects, never works inside them |
+| **Global orchestrator tools** | `delegate`, `list_projects`, `propose_project`, `init_project`, read-only fs over `~/.sophron/`. **No** `run_command`/`apply_patch` | Scoped — no codebase workspace; scaffolding is controlled |
+| **Project location (2026-07-07)** | New projects created at `~/sophron_workspace/<name>`, registered in `~/.sophron/projects.json` | |
 | **Roster shape** | `model: ollama:qwen3.5:9b-thinking` is available locally | Used for all demo agents |
 
 ---
@@ -74,24 +80,29 @@ V3/
 │   │   ├── catalog.ts       # McpToolCatalog — index + keyword search (no embeddings)
 │   │   ├── costMeter.ts     # TokenCostMeter — per-tool cost estimate (chars/3.5) + cumulative + budget warn
 │   │   └── promotion.ts     # promoteTool (catalog→ToolSpec), mcpToolId, flattenMcpResult
-│   ├── tui/                 # Phase 5a — interactive operator surface (Ink)
-│   │   ├── slashCommands.ts # parser: /agents /runs /checkpoint /advance /cost /memory /run /approve /rewind
+│   ├── tui/                 # Phase 5a — interactive operator surface (Ink) ⚠️ M3 REWRITE PENDING
+│   │   ├── slashCommands.ts # parser: /agents /runs /checkpoint /advance /cost /memory /run /approve /rewind /projects
 │   │   ├── dashboard.ts     # buildDashboard: aggregates SharedServices → renderable model
 │   │   ├── approvals.ts     # ApprovalsQueue + gateDecisionFor (prompt-gate backend)
-│   │   ├── app.tsx          # Ink shell: input + view switching + command routing
+│   │   ├── app.tsx          # Ink shell (FIRST M3 ATTEMPT — being rewritten: box-chrome tabs + Home/Project surfaces)
 │   │   ├── launch.tsx       # JSX bridge (CLI .ts → App .tsx)
-│   │   └── components/DashboardView.tsx  # dashboard panel
+│   │   └── components/      # DashboardView, SelectList, pages (Projects/Agents/Runs/...), projectSwitcher (Ctrl+P overlay)
+│   ├── project/
+│   │   └── registry.ts      # ~/.sophron/projects.json store (name,path,lastOpened,pinned) — REUSED by M3 rewrite
+│   ├── services/
+│   │   └── lifecycle.ts     # buildServices / closeServices / switchServices (teardown→rebuild on project switch) — REUSED by M3
 │   ├── llm/
-│   │   ├── providers.ts     # OpenRouter/Ollama/z.ai config + resolveModel()
-│   │   ├── client.ts        # one OpenAI-compat client; retry-controlled (timeout=120, maxRetries=0)
+│   │   ├── providers.ts     # M2: named provider instances ({name,kind,baseURL,...}) + resolveModel/resolveModelWithProvider + expandEnv + legacy migration
+│   │   ├── client.ts        # one OpenAI-compat client per instance; retry-controlled (timeout=120, maxRetries=0); listModels
 │   │   └── promptBuilder.ts # volatility-ordered messages for prefix-cache hits; injects per-agent + shared memory
 │   ├── tools/
-│   │   ├── schema.ts        # ToolSpec, ToolContext (+ SharedServices incl. memory stores), ToolHandler
+│   │   ├── schema.ts        # ToolSpec, ToolContext (+ SharedServices incl. memory stores + purifier), ToolHandler
 │   │   ├── registry.ts      # ToolRegistry + definitionsFor (allow/deny filter)
-│   │   ├── dispatcher.ts    # ToolDispatcher + PermissionGate (tool+mode-aware)
+│   │   ├── dispatcher.ts    # ToolDispatcher + PermissionGate (tool+mode-aware); M1 purifier wired in post-handler
+│   │   ├── purifier.ts      # M1: Tier1 deterministic + Tier2 cheap-model filter; raw→.sophron/raw/ (LRU); never throws
 │   │   └── builtin/
 │   │       ├── paths.ts           # safeResolve (path-traversal guard)
-│   │   ├── index.ts           # registers all 10 built-in tools
+│   │       ├── index.ts           # registers all 11 built-in tools (incl. read_raw_output)
 │   │       ├── echo.ts, read_file.ts, write_file.ts, list_dir.ts  (in index.ts)
 │   │       ├── run_command.ts     # shell under sandbox + dangerous-command blocker
 │   │       ├── apply_patch.ts     # unified-diff applier
@@ -99,7 +110,8 @@ V3/
 │   │       ├── remember.ts        # write to per-agent or shared memory (Phase 3)
 │   │       ├── advance_checkpoint.ts  # mark current milestone done, advance (Phase 3)
 │   │       ├── mcp_tool_search.ts     # lazy MCP meta-tool: search→promote (Phase 4)
-│   │       └── propose_agent.ts       # Architect drafts agent for operator approval (Phase 6)
+│   │       ├── propose_agent.ts       # Architect drafts agent for operator approval (Phase 6)
+│   │       └── read_raw_output.ts     # M1 escape hatch: retrieve full raw tool output
 │   ├── sandbox/
 │   │   ├── backend.ts             # ExecutionBackend interface + getBackend() factory
 │   │   ├── spawn.ts               # spawnWithTimeout (AbortController + settled flag)
@@ -115,7 +127,7 @@ V3/
 │       ├── log.ts                 # pino (pretty in dev)
 │       ├── tokenize.ts            # approxTokens (chars/3.5)
 │       └── retry.ts               # isTransientError + retryTransient (backoff + jitter)
-├── tests/                   # 25 suites, 384 tests, all passing
+├── tests/                   # ~30 suites, 473 tests, all passing (384 Phase 0–6 + M1/M2/first-M3)
 │   ├── util/retry.test.ts                       (9)
 │   ├── state/checkpointer.test.ts               (7)
 │   ├── tools/dispatcher.test.ts                 (11)
@@ -150,7 +162,9 @@ V3/
 - `npm run dev -- run <agent> "<task>"` — run an agent
 - `npm run dev -- agents` — list loaded agents
 - `npm run dev -- replay <runId>` — print a run's JSONL events
-- `npm test` — vitest (384 tests)
+- `npm run dev -- providers` — list configured provider instances
+- `npm run dev -- providers <name>` — connectivity-test a provider (`GET /v1/models`)
+- `npm test` — vitest (473 tests; 384 after Phase 6, +34 M1, +30 M2, +25 first-M3)
 - `npm run dev` (no args) — launch the interactive TUI dashboard
 - `npm run typecheck` — `tsc --noEmit`
 
@@ -270,7 +284,7 @@ flowchart TB
 
 ## 7. First message to send the next agent
 
-> "Continue SophronSwarm V3 development at Phase 7 (specialization kits) or Phase 5b (web UI). Read `docs/AGENT_CONTEXT.md` first, then `docs/PHASE_6_COMPLETE.md` for the handoff. Phase 6 is complete (384/384 tests): the auto-mode classifier (cheap local `qwen3.5:9b-fast` vets each mutating command) + `propose_agent` (Architect drafts agents → operator approves → bootstrap closes). Phase 7 ships starter agent packs (design/security/feature/orchestrator) using `propose_agent` + the auto gate; Phase 5b promotes the V2 debug server to Next.js. Run `npm test` to confirm the baseline (384/384) before changing anything."
+> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/ROADMAP.md` for the authoritative M1–M9 plan and the **two-tier hierarchy vision** (global orchestrator above all projects + per-project orchestrator). Phases 0–6 are complete; milestones **M1 (output purifier)** and **M2 (named providers)** are complete (473/473 tests). The first **M3 (TUI)** attempt shipped but its navigation is broken/confusing → **full rewrite** to a box-chrome tabbed Home (Overview / Orchestrator-stub / Projects) + Project View (Status / Agents with live stream). Reuse `src/project/registry.ts` + `src/services/lifecycle.ts`; replace `src/tui/app.tsx` + `components/pages.tsx` + `components/projectSwitcher.tsx`. M5 (`sophron init` templates, which seed the standardized per-project orchestrator) can be built in parallel. Then M6 (`propose_roster`), M7 (global orchestrator meta-layer — **no memory**, scoped tools), M8 (wire global orchestrator into the Home Orchestrator tab). Run `npm test` to confirm the baseline (473/473) before changing anything."
 
 ---
 

@@ -1,31 +1,34 @@
 /**
- * Smoke tests for the Ink TUI components via ink-testing-library.
+ * Smoke tests for the new (M3 rewrite) Ink TUI components.
  *
- * These render the components to a string (no real TTY) and assert on the
- * output. The interactive App shell's input handling is exercised via the
- * pure parser tests (slashCommands.test.ts); here we verify the rendering.
+ * These render the components to a string via ink-testing-library (no real
+ * TTY) and assert on the output. The navigation logic is covered separately
+ * by nav.test.ts (pure reducer); here we verify rendering of the chrome +
+ * surface/tab components.
  */
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
-import { DashboardView } from "../../src/tui/components/DashboardView.js";
-import { SelectList, clampIndex, type SelectListItem } from "../../src/tui/components/SelectList.js";
-import {
-  HomePage,
-  ProjectsPage,
-  AgentsPage,
-  AgentDetailPage,
-  RunsPage,
-  RunDetailPage,
-  CheckpointPage,
-  CostPage,
-  HelpPage,
-  HOME_MENU,
-  type Page,
-} from "../../src/tui/components/pages.js";
-import { ProjectSwitcher } from "../../src/tui/components/projectSwitcher.js";
-import type { ProjectEntry } from "../../src/project/registry.js";
-import type { DashboardModel, RunDetail } from "../../src/tui/dashboard.js";
 import React from "react";
+import { TabBar } from "../../src/tui/components/TabBar.js";
+import { InputBar } from "../../src/tui/components/InputBar.js";
+import { Banner } from "../../src/tui/components/Banner.js";
+import { OverviewTab } from "../../src/tui/components/OverviewTab.js";
+import { OrchestratorTab } from "../../src/tui/components/OrchestratorTab.js";
+import { ProjectsTab } from "../../src/tui/components/ProjectsTab.js";
+import {
+  StatusTab,
+  AgentsTab,
+  RunsTab,
+  CheckpointTab,
+  MemoryTab,
+  CostTab,
+} from "../../src/tui/components/ProjectTabs.js";
+import { AgentDetail } from "../../src/tui/components/AgentDetail.js";
+import { SelectList, clampIndex, type SelectListItem } from "../../src/tui/components/SelectList.js";
+import type { ProjectEntry } from "../../src/project/registry.js";
+import type { DashboardModel, OverviewModel } from "../../src/tui/dashboard.js";
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeModel(overrides: Partial<DashboardModel> = {}): DashboardModel {
   return {
@@ -39,103 +42,36 @@ function makeModel(overrides: Partial<DashboardModel> = {}): DashboardModel {
   };
 }
 
-describe("DashboardView", () => {
-  it("renders the header + workspace", () => {
-    const { lastFrame } = render(<DashboardView model={makeModel()} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("SophronSwarm V3 — Dashboard");
-    expect(frame).toContain("/tmp/proj");
-  });
+function makeOverview(overrides: Partial<OverviewModel> = {}): OverviewModel {
+  return {
+    projects: [],
+    totalProjects: 0,
+    totalRuns: 0,
+    totalTokens: 0,
+    failedRuns: 0,
+    needingAttention: [],
+    activeApprovalsPending: 0,
+    ...overrides,
+  };
+}
 
-  it("lists agents", () => {
-    const { lastFrame } = render(<DashboardView model={makeModel()} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("builder");
-    expect(frame).toContain("builds things");
-    expect(frame).toContain("ollama:test:1b");
-  });
+function makeProject(overrides: Partial<ProjectEntry> = {}): ProjectEntry {
+  return { name: "my-app", path: "/tmp/my-app", lastOpened: 0, ...overrides };
+}
 
-  it("renders the current checkpoint", () => {
-    const { lastFrame } = render(<DashboardView model={makeModel()} />);
-    expect(lastFrame() ?? "").toContain("Phase 0");
-  });
-
-  it("shows the pending-approvals badge when > 0", () => {
-    const { lastFrame } = render(<DashboardView model={makeModel({ approvalsPending: 2 })} />);
-    expect(lastFrame() ?? "").toContain("pending approval");
-  });
-
-  it("shows MCP cost when tools are promoted", () => {
-    const model = makeModel({
-      mcpCost: {
-        perServer: [{ server: "math", tokens: 84 }],
-        total: 84,
-        configuredServers: ["math"],
-      },
-    });
-    const { lastFrame } = render(<DashboardView model={model} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("math");
-    expect(frame).toContain("tokens/turn");
-  });
-
-  it("shows lazy-MCP hint when nothing promoted", () => {
-    const { lastFrame } = render(<DashboardView model={makeModel()} />);
-    expect(lastFrame() ?? "").toContain("lazy");
-  });
-
-  it("renders recent runs", () => {
-    const model = makeModel({
-      recentRuns: [{ runId: "abc123", agent: "builder", status: "complete", turns: 3, tokens: 1500, startedAt: "2026-07-05T00:00:00.000Z" }],
-    });
-    const { lastFrame } = render(<DashboardView model={model} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("builder");
-    expect(frame).toContain("complete");
-    expect(frame).toContain("1.5k"); // 1500 tokens → 1.5k
-  });
-
-  it("degrades gracefully with an empty workspace", () => {
-    const model: DashboardModel = {
-      workspaceDir: "/tmp/empty",
-      agents: [],
-      checkpoint: { current: "(none set)", milestones: [] },
-      mcpCost: { perServer: [], total: 0, configuredServers: [] },
-      recentRuns: [],
-      approvalsPending: 0,
-    };
-    const { lastFrame } = render(<DashboardView model={model} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("no agents loaded");
-    expect(frame).toContain("no milestones defined");
-    expect(frame).toContain("no runs yet");
-  });
-});
-
-// ── SelectList ─────────────────────────────────────────────────────────────
+// ── SelectList (reused, regression coverage) ────────────────────────────────
 
 describe("SelectList", () => {
-  const items: SelectListItem[] = [
-    { id: "a", label: "Alpha", hint: "first" },
-    { id: "b", label: "Beta", hint: "second" },
-    { id: "c", label: "Gamma", icon: "🎯" },
-  ];
-
-  it("renders all items with the selected one highlighted (❯ marker)", () => {
+  it("renders items with the selected one highlighted", () => {
+    const items: SelectListItem[] = [
+      { id: "a", label: "Alpha" },
+      { id: "b", label: "Beta" },
+    ];
     const { lastFrame } = render(<SelectList items={items} selectedIndex={1} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Alpha");
     expect(frame).toContain("Beta");
-    expect(frame).toContain("Gamma");
-    // Only the selected item (Beta, index 1) has the ❯ marker.
-    const lines = frame.split("\n").map((l) => l.trim());
-    const markerLine = lines.find((l) => l.includes("❯"));
-    expect(markerLine).toContain("Beta");
-  });
-
-  it("renders a title when provided", () => {
-    const { lastFrame } = render(<SelectList items={items} selectedIndex={0} title="Menu" />);
-    expect(lastFrame() ?? "").toContain("Menu");
+    expect(frame).toContain("❯"); // selected marker
   });
 
   it("shows (empty) for an empty list", () => {
@@ -143,226 +79,246 @@ describe("SelectList", () => {
     expect(lastFrame() ?? "").toContain("(empty)");
   });
 
-  it("renders the hint line for items that have one", () => {
-    const { lastFrame } = render(<SelectList items={items} selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("first");
+  it("clampIndex clamps into range", () => {
+    expect(clampIndex(-1, 3)).toBe(0);
+    expect(clampIndex(5, 3)).toBe(2);
+    expect(clampIndex(1, 3)).toBe(1);
+    expect(clampIndex(0, 0)).toBe(0);
   });
 });
 
-describe("clampIndex", () => {
-  it("clamps below 0 to 0", () => {
-    expect(clampIndex(-3, 5)).toBe(0);
-  });
-  it("clamps above length-1 to length-1", () => {
-    expect(clampIndex(10, 5)).toBe(4);
-  });
-  it("passes through valid indices", () => {
-    expect(clampIndex(2, 5)).toBe(2);
-  });
-  it("returns 0 for an empty list", () => {
-    expect(clampIndex(5, 0)).toBe(0);
-    expect(clampIndex(-1, 0)).toBe(0);
-  });
-});
+// ── Chrome: Banner, TabBar, InputBar ────────────────────────────────────────
 
-// ── Pages ───────────────────────────────────────────────────────────────────
-
-describe("HomePage menu", () => {
-  it("HOME_MENU has 8 entries including quit", () => {
-    expect(HOME_MENU).toHaveLength(8);
-    expect(HOME_MENU.map((m) => m.page)).toContain("quit");
-    expect(HOME_MENU.map((m) => m.page)).toContain("projects");
-    expect(HOME_MENU.map((m) => m.page)).toContain("memory");
-  });
-
-  it("renders the menu with all page labels", () => {
-    const { lastFrame } = render(<HomePage model={makeModel()} selectedIndex={0} />);
+describe("Banner", () => {
+  it("renders the SophronSwarm ASCII art + version", () => {
+    const { lastFrame } = render(<Banner version="V3" />);
     const frame = lastFrame() ?? "";
+    // The ASCII art spells "SophronSwarm" across lines; check figlet fragments.
+    expect(frame).toContain("____"); // top of the S
+    expect(frame).toContain("V3");
+    expect(frame.split("\n").length).toBeGreaterThanOrEqual(5); // multi-line art
+  });
+});
+
+describe("TabBar", () => {
+  it("renders all tab labels", () => {
+    const { lastFrame } = render(<TabBar labels={["Overview", "Orchestrator", "Projects"]} selectedIndex={1} focused={false} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Overview");
+    expect(frame).toContain("Orchestrator");
     expect(frame).toContain("Projects");
-    expect(frame).toContain("Agents");
-    expect(frame).toContain("Runs");
-    expect(frame).toContain("Checkpoint");
-    expect(frame).toContain("MCP Cost");
-    expect(frame).toContain("Memory");
-    expect(frame).toContain("Quit");
   });
 
-  it("highlights the selected menu item", () => {
-    const { lastFrame } = render(<HomePage model={makeModel()} selectedIndex={2} />);
-    const frame = lastFrame() ?? "";
-    // selectedIndex 2 = "Runs"
-    const markerLine = frame.split("\n").map((l) => l.trim()).find((l) => l.includes("❯"));
-    expect(markerLine).toContain("Runs");
+  it("renders without crashing when focused", () => {
+    const { lastFrame } = render(<TabBar labels={["A", "B"]} selectedIndex={0} focused={true} />);
+    expect(lastFrame() ?? "").toContain("A");
   });
 });
 
-describe("ProjectsPage", () => {
-  it("shows the workspace path + agent/run/server counts", () => {
-    const { lastFrame } = render(<ProjectsPage model={makeModel()} />);
+describe("InputBar", () => {
+  it("shows the prompt + value + cursor when focused", () => {
+    const { lastFrame } = render(<InputBar value="hello" focused={true} prompt=">" />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("/tmp/proj");
-    expect(frame).toContain("agents: 1");
-    expect(frame).toContain("Phase 0");
+    expect(frame).toContain("hello");
+    expect(frame).toContain("▏");
+  });
+
+  it("shows the hint line when not focused", () => {
+    const { lastFrame } = render(<InputBar value="" focused={false} prompt=">" />);
+    expect(lastFrame() ?? "").toContain("type to enter");
+  });
+
+  it("shows disabled message when disabled", () => {
+    const { lastFrame } = render(<InputBar value="" focused={false} disabled={true} />);
+    expect(lastFrame() ?? "").toContain("switching");
+  });
+
+  it("uses the agent prompt when given", () => {
+    const { lastFrame } = render(<InputBar value="task" focused={true} prompt="builder>" />);
+    expect(lastFrame() ?? "").toContain("builder>");
   });
 });
 
-describe("AgentsPage", () => {
-  it("lists agents as a navigable list", () => {
-    const { lastFrame } = render(<AgentsPage model={makeModel()} selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("builder");
-  });
-  it("shows empty hint with no agents", () => {
-    const { lastFrame } = render(<AgentsPage model={makeModel({ agents: [] })} selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("no agents");
-  });
-  it("highlights the selected agent", () => {
-    const { lastFrame } = render(<AgentsPage model={makeModel()} selectedIndex={0} />);
-    const frame = lastFrame() ?? "";
-    const markerLine = frame.split("\n").map((l) => l.trim()).find((l) => l.includes("❯"));
-    expect(markerLine).toContain("builder");
-  });
-});
+// ── Home surface tabs ───────────────────────────────────────────────────────
 
-describe("AgentDetailPage", () => {
-  it("shows the agent's full config + dedicated input", () => {
-    const { lastFrame } = render(
-      <AgentDetailPage model={makeModel()} agentName="builder" input="" mode="navigate" />,
-    );
+describe("OverviewTab", () => {
+  it("shows aggregate stats + healthy message when no failures", () => {
+    const { lastFrame } = render(<OverviewTab overview={makeOverview({ totalProjects: 2, totalRuns: 5, totalTokens: 1200 })} activeProjectName="x" />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("builder");
-    expect(frame).toContain("ollama:test:1b");
-    expect(frame).toContain("send a task");
-    expect(frame).toContain("builds things");
+    expect(frame).toContain("projects: 2");
+    expect(frame).toContain("runs: 5");
+    expect(frame).toContain("All projects healthy");
   });
-  it("shows not-found for an unknown agent", () => {
-    const { lastFrame } = render(
-      <AgentDetailPage model={makeModel()} agentName="ghost" input="" mode="navigate" />,
-    );
-    expect(lastFrame() ?? "").toContain("not found");
-  });
-});
 
-describe("RunsPage", () => {
-  it("shows empty hint with no runs", () => {
-    const { lastFrame } = render(<RunsPage model={makeModel()} selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("no runs");
-  });
-  it("lists runs as navigable when present", () => {
-    const model = makeModel({
-      recentRuns: [{ runId: "abc12345", agent: "builder", status: "complete", turns: 3, tokens: 1500, startedAt: "2026-07-05" }],
+  it("lists needing-attention projects when there are failures", () => {
+    const ov = makeOverview({
+      totalProjects: 1,
+      failedRuns: 1,
+      needingAttention: ["broken-app"],
+      projects: [makeProject({ name: "broken-app" })],
     });
-    const { lastFrame } = render(<RunsPage model={model} selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("builder");
-    expect(lastFrame() ?? "").toContain("complete");
+    const { lastFrame } = render(<OverviewTab overview={ov} activeProjectName="x" />);
+    expect(lastFrame() ?? "").toContain("Needs attention: broken-app");
   });
-});
 
-describe("RunDetailPage", () => {
-  it("renders the event log when a detail is provided", () => {
-    const detail: RunDetail = {
-      runId: "abc12345",
-      agent: "builder",
-      status: "complete",
-      task: "do the thing",
-      turns: 2,
-      tokens: 500,
-      events: [
-        { type: "run_start", label: "run start", detail: "builder" },
-        { type: "tool_call_start", turn: 0, label: "→ echo", detail: '{"text":"hi"}' },
-        { type: "tool_call_result", turn: 0, label: "← echo", detail: "hi" },
-        { type: "run_end", label: "run end", detail: "complete · 2 turns · 500 tokens" },
-      ],
-    };
-    const { lastFrame } = render(<RunDetailPage detail={detail} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("builder");
-    expect(frame).toContain("do the thing");
-    expect(frame).toContain("event log");
-    expect(frame).toContain("→ echo");
-    expect(frame).toContain("← echo");
-  });
-  it("shows not-found when detail is null", () => {
-    const { lastFrame } = render(<RunDetailPage detail={null} />);
-    expect(lastFrame() ?? "").toContain("not found");
-  });
-});
-
-describe("CheckpointPage", () => {
-  it("shows the current checkpoint + milestones", () => {
-    const { lastFrame } = render(<CheckpointPage model={makeModel()} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("Phase 0");
-    expect(frame).toContain("/advance");
-  });
-});
-
-describe("CostPage", () => {
-  it("shows lazy hint when no tools promoted", () => {
-    const { lastFrame } = render(<CostPage model={makeModel()} />);
-    expect(lastFrame() ?? "").toContain("lazy");
-  });
-  it("shows per-server cost when tools are promoted", () => {
-    const model = makeModel({
-      mcpCost: { perServer: [{ server: "math", tokens: 84 }], total: 84, configuredServers: ["math"] },
-    });
-    const { lastFrame } = render(<CostPage model={model} />);
-    expect(lastFrame() ?? "").toContain("math");
-  });
-});
-
-describe("HelpPage", () => {
-  it("renders the command reference", () => {
-    const { lastFrame } = render(<HelpPage />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("/agents");
-    expect(frame).toContain("/run");
-  });
-});
-
-// ── Project Switcher ────────────────────────────────────────────────────────
-
-function makeProject(overrides: Partial<ProjectEntry> = {}): ProjectEntry {
-  return { name: "test-proj", path: "/projects/test", lastOpened: 1000, ...overrides };
-}
-
-describe("ProjectSwitcher", () => {
-  it("shows empty hint when no projects registered", () => {
-    const { lastFrame } = render(<ProjectSwitcher projects={[]} activePath="/x" selectedIndex={0} />);
+  it("shows the empty hint when no projects registered", () => {
+    const { lastFrame } = render(<OverviewTab overview={makeOverview()} activeProjectName="x" />);
     expect(lastFrame() ?? "").toContain("no projects registered");
   });
 
-  it("lists registered projects with names", () => {
-    const projects = [
-      makeProject({ name: "webapp", path: "/projects/webapp" }),
-      makeProject({ name: "cli", path: "/projects/cli" }),
-    ];
-    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/projects/webapp" selectedIndex={0} />);
+  it("renders per-project rows with active highlight", () => {
+    const ov = makeOverview({
+      totalProjects: 2,
+      projects: [
+        makeProject({ name: "active-one", runCount: 3, lastRunStatus: "complete" }),
+        makeProject({ name: "other" }),
+      ],
+    });
+    const { lastFrame } = render(<OverviewTab overview={ov} activeProjectName="active-one" />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("webapp");
-    expect(frame).toContain("cli");
-    expect(frame).toContain("Switch Project");
+    expect(frame).toContain("active-one");
+    expect(frame).toContain("(active)");
+    expect(frame).toContain("complete");
   });
 
-  it("marks the active project", () => {
-    const projects = [makeProject({ name: "active", path: "/active" }), makeProject({ name: "other", path: "/other" })];
-    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/active" selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("(active)");
+  it("shows pending approvals badge", () => {
+    const { lastFrame } = render(<OverviewTab overview={makeOverview({ activeApprovalsPending: 3 })} activeProjectName="x" />);
+    expect(lastFrame() ?? "").toContain("pending approval");
   });
+});
 
-  it("shows the selection marker on the selected row", () => {
-    const projects = [makeProject({ name: "a", path: "/a" }), makeProject({ name: "b", path: "/b" })];
-    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/a" selectedIndex={1} />);
+describe("OrchestratorTab", () => {
+  it("renders the stub notice", () => {
+    const { lastFrame } = render(<OrchestratorTab />);
     const frame = lastFrame() ?? "";
-    // The second item should have the ▸ marker; the first should not.
-    const lines = frame.split("\n");
-    const selectedLine = lines.find((l) => l.includes("▸"));
-    expect(selectedLine).toBeDefined();
-    expect(selectedLine!).toContain("b");
+    expect(frame).toContain("not yet built");
+    expect(frame).toContain("Orchestrator");
+  });
+});
+
+describe("ProjectsTab", () => {
+  it("lists registered projects", () => {
+    const projects = [makeProject({ name: "alpha", path: "/x/alpha" }), makeProject({ name: "beta", path: "/x/beta" })];
+    const { lastFrame } = render(<ProjectsTab projects={projects} selectedIndex={0} activePath="/x/alpha" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("alpha");
+    expect(frame).toContain("beta");
+    expect(frame).toContain("(active)");
   });
 
-  it("shows a pinned marker on pinned projects", () => {
-    const projects = [makeProject({ name: "pinned", path: "/p", pinned: true })];
-    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/x" selectedIndex={0} />);
-    expect(lastFrame() ?? "").toContain("📌");
+  it("shows empty hint when no projects", () => {
+    const { lastFrame } = render(<ProjectsTab projects={[]} selectedIndex={0} activePath="" />);
+    expect(lastFrame() ?? "").toContain("no projects registered");
+  });
+});
+
+// ── Project surface tabs ────────────────────────────────────────────────────
+
+describe("StatusTab", () => {
+  it("renders project summary stats", () => {
+    const { lastFrame } = render(<StatusTab model={makeModel({ approvalsPending: 2 })} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("agents: 1");
+    expect(frame).toContain("Phase 0");
+    expect(frame).toContain("pending approval");
+  });
+
+  it("shows healthy message when no pending approvals", () => {
+    const { lastFrame } = render(<StatusTab model={makeModel()} />);
+    expect(lastFrame() ?? "").toContain("no pending approvals");
+  });
+});
+
+describe("AgentsTab", () => {
+  it("lists loaded agents", () => {
+    const { lastFrame } = render(<AgentsTab model={makeModel()} selectedIndex={0} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("builder");
+    expect(frame).toContain("builds things");
+    expect(frame).toContain("Enter to open");
+  });
+
+  it("shows empty hint when no agents", () => {
+    const { lastFrame } = render(<AgentsTab model={makeModel({ agents: [] })} selectedIndex={0} />);
+    expect(lastFrame() ?? "").toContain("no agents loaded");
+  });
+});
+
+describe("RunsTab", () => {
+  it("lists recent runs", () => {
+    const model = makeModel({
+      recentRuns: [{ runId: "abc12345", agent: "builder", status: "complete", turns: 3, tokens: 1500, startedAt: "2026-07-05T00:00:00.000Z" }],
+    });
+    const { lastFrame } = render(<RunsTab model={model} selectedIndex={0} />);
+    expect(lastFrame() ?? "").toContain("builder");
+  });
+
+  it("shows empty hint when no runs", () => {
+    const { lastFrame } = render(<RunsTab model={makeModel()} selectedIndex={0} />);
+    expect(lastFrame() ?? "").toContain("no runs yet");
+  });
+});
+
+describe("CheckpointTab", () => {
+  it("renders the current checkpoint + milestones", () => {
+    const { lastFrame } = render(<CheckpointTab model={makeModel()} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("current:");
+    expect(frame).toContain("Phase 0");
+  });
+});
+
+describe("MemoryTab", () => {
+  it("renders content lines", () => {
+    const { lastFrame } = render(<MemoryTab content={"- OVERVIEW.md\n- CHECKPOINTS.md"} label="shared" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("OVERVIEW.md");
+    expect(frame).toContain("shared");
+  });
+
+  it("shows empty for no content", () => {
+    const { lastFrame } = render(<MemoryTab content="" label="x" />);
+    expect(lastFrame() ?? "").toContain("(empty)");
+  });
+});
+
+describe("CostTab", () => {
+  it("renders configured servers + lazy hint when none promoted", () => {
+    const { lastFrame } = render(<CostTab model={makeModel({ mcpCost: { perServer: [], total: 0, configuredServers: ["math"] } })} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("math");
+    expect(frame).toContain("lazy by default");
+  });
+
+  it("renders per-server breakdown when tools promoted", () => {
+    const { lastFrame } = render(<CostTab model={makeModel({ mcpCost: { perServer: [{ server: "math", tokens: 84 }], total: 84, configuredServers: ["math"] } })} />);
+    expect(lastFrame() ?? "").toContain("per-server");
+  });
+});
+
+// ── AgentDetail ─────────────────────────────────────────────────────────────
+
+describe("AgentDetail", () => {
+  it("renders the agent config", () => {
+    const { lastFrame } = render(<AgentDetail model={makeModel()} agentName="builder" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("builder");
+    expect(frame).toContain("builds things");
+    expect(frame).toContain("ollama:test:1b");
+  });
+
+  it("shows the live-stream section", () => {
+    const { lastFrame } = render(<AgentDetail model={makeModel()} agentName="builder" />);
+    expect(lastFrame() ?? "").toContain("live stream");
+  });
+
+  it("shows the no-runs hint when the agent has no runs", () => {
+    const { lastFrame } = render(<AgentDetail model={makeModel()} agentName="builder" />);
+    expect(lastFrame() ?? "").toContain("no run activity");
+  });
+
+  it("shows (agent not found) for an unknown agent", () => {
+    const { lastFrame } = render(<AgentDetail model={makeModel()} agentName="ghost" />);
+    expect(lastFrame() ?? "").toContain("agent not found");
   });
 });

@@ -150,12 +150,21 @@ Writes happen via a `remember` tool the agent calls deliberately (not auto-dumpe
 
 When a task needs critical info, the sub-agent writes it to **shared memory** (§5.3) so the next agent picks it up without re-deriving it. Handoff packets (objective, files touched, commands run, outcome, next-actions) — à la SwarmClaw — let work move between agents/sessions without replaying full transcripts.
 
-### 5.5 Optimized UI/CLI Navigation ✅ (refined)
-Two surfaces, one data model:
-- **CLI** (primary, V3 is CLI-first): `sophron` launches an interactive TUI with panels — agents, project overview, checkpoints, live runs, approvals queue, token spend. Slash-commands (`/agents`, `/checkpoint`, `/approve`, `/compact`, `/rewind`).
-- **Web UI** (V2's debug server, promoted): org-chart view of agents + delegation, live run replay, memory browser, approvals desk, token/cost dashboard. Shares the JSONL event log with the CLI.
+### 5.5 Optimized UI/CLI Navigation ✅ (refined — rewritten for the two-tier hierarchy)
+Two surfaces, one data model. **CLI-first** (locked, §7.6):
+- **CLI/TUI (primary):** a **box-chrome** terminal shell with a "SophronSwarm" ASCII header, a horizontal divider, and a **horizontal tab bar** navigated with ←/→ (Enter/↓ drills in, Esc/↑ exits). The shell has two surfaces:
+  - **Home surface** — three tabs: **Overview** (aggregate cross-project health: active runs, pending approvals, token spend, agents in HALT — display-only), **Orchestrator** (Claude-Code/Codex-style two-pane chat with the **global orchestrator** — conversation list left, chat right), and **Projects** (list all projects; enter one).
+  - **Project surface** — its own tabs: **Status** (project-specific approvals/runs/token use) and **Agents** (list; select one → **Agent detail** with a **live stream** of what it's doing).
+- **Web UI** (V2's debug server, promoted): org-chart view of agents + delegation, live run replay, memory browser, approvals desk, token/cost dashboard. Shares the JSONL event log with the CLI. **Deferred** (M9) — CLI-first is locked.
 
 Both let the operator **interfere/customize** at any point: edit an agent mid-run, inject a checkpoint, force-approve a command, rewind to a prior state (checkpointer).
+
+> **Note (2026-07-07):** the first TUI attempt shipped but its navigation was
+> broken/confusing and is being **fully rewritten** (ROADMAP M3). The
+> authoritative nav spec is now in `ROADMAP.md` M3; the global-orchestrator
+> chat is wired in at M8. The two-tier hierarchy (global orchestrator above
+> projects + per-project orchestrator) is specified in `ROADMAP.md` (vision)
+> and `IDEAS.md` §6.
 
 ### 5.6 Computer Access + Bash Autopilot ✅ (refined)
 **Spec.** Agents with permission (architect, dependency-manager, builder, …) can run shell commands via `run_command`, executed under **OS-level isolation**:
@@ -213,18 +222,30 @@ Codex and Claude Code are CLI-first; SwarmClaw is web-first. Given your goals (i
 
 ---
 
-## 8. Proposed Phasing
+## 8. Phasing + milestones
 
-| Phase | Deliverable | Status |
+The original phase breakdown (0–7) is **complete through Phase 6**. Subsequent
+work is tracked as **milestones M1–M9** in [`ROADMAP.md`](./ROADMAP.md), which
+is the authoritative current plan. Summary:
+
+| Phase / Milestone | Deliverable | Status |
 |---|---|---|
-| **0 — Skeleton** | Agentic loop + tool dispatcher + declarative agent loader + checkpointer/recorder (port from V2). | ✅ [COMPLETE](PHASE_0_COMPLETE.md) |
+| **0 — Skeleton** | Agentic loop + tool dispatcher + declarative agent loader + checkpointer/recorder. | ✅ [COMPLETE](PHASE_0_COMPLETE.md) |
 | **1 — Live tools + sandbox** | `run_command` / `apply_patch` under bubblewrap + dangerous-command blocker. | ✅ [COMPLETE](PHASE_1_COMPLETE.md) |
 | **2 — Delegation** | `delegate` tool, depth limit, cycle detection, allowlist, isolated context, HandoffPacket, recorder stack. | ✅ [COMPLETE](PHASE_2_COMPLETE.md) |
-| **3 — Memory** | Per-agent (`MEMORY.md` + `remember`), shared (`.sophron/shared/`), handoff packets to shared memory. | 🔜 next |
-| **4 — MCP** | Lazy loader + `mcp_tool_search` + token-cost meter + connection pool. | — |
-| **5 — CLI/TUI + web UI** | Ink TUI panels, slash-commands, approvals desk; promote V2 debug UI to Next.js. | — |
-| **6 — Auto mode + agent-creation** | Classifier-based auto permission; `propose_agent` draft→approve. | — |
-| **7 — Specialization kits** | Starter agent packs (design/security/feature/orchestrator). | — |
+| **3 — Memory** | Per-agent (`MEMORY.md` + `remember`), shared (`.sophron/shared/`), handoff packets to shared memory. | ✅ [COMPLETE](PHASE_3_COMPLETE.md) |
+| **4 — MCP** | Lazy loader + `mcp_tool_search` + token-cost meter + connection pool. | ✅ [COMPLETE](PHASE_4_COMPLETE.md) |
+| **5a — CLI/TUI** | Ink TUI panels, slash-commands, approvals desk. | ✅ [COMPLETE](PHASE_5_COMPLETE.md) |
+| **6 — Auto mode + agent-creation** | Classifier-based auto permission; `propose_agent` draft→approve. | ✅ [COMPLETE](PHASE_6_COMPLETE.md) |
+| **M1 — Output Purifier** | Deterministic + Tier-2 cheap-model filter on tool output. | ✅ DONE |
+| **M2 — Named Providers** | Free-form provider-instance names; multi-endpoint. | ✅ DONE |
+| **M3 — TUI Shell (rewrite)** | Box-chrome tabbed Home + Project View; live-stream agent detail. | 🔨 Rewrite |
+| **M4 — Context `/help`** | `helpForView(view)` over M3's view set. | 🔜 |
+| **M5 — `sophron init` Templates** | Scaffolds a project + seeds the standardized per-project orchestrator + global architect. | 🔜 |
+| **M6 — `propose_roster`** | Batch draft→approve→close; generalizes `propose_agent`. | 🔜 |
+| **M7 — Global Orchestrator meta-layer** | The "CEO" agent above all projects (no memory); `propose_project` / `init_project`. | 🔬 |
+| **M8 — Wire Global Orchestrator into Home** | Replace the M3 Orchestrator-tab stub with the real chat. | 🔬 |
+| **M9 — Web UI (Phase 5b)** | Promote V2 debug UI to Next.js. | ⏸ Deferred |
 
 ---
 
@@ -236,6 +257,11 @@ Codex and Claude Code are CLI-first; SwarmClaw is web-first. Given your goals (i
 4. **Agent-creation policy (decided — Q4):** One-time, project-bootstrap step. Architect drafts the **entire** roster up front; **all** drafts require explicit operator approval; creation is then closed for the project. **Soft cap at 12 agents** per workspace (warn, don't hard-block). See §5.1.
 5. **Auto-mode classifier (decided):** a **small local Ollama model** for per-command vetting (free, offline, low-latency). Model name TBD when you pick one.
 6. **Language/stack (decided — Q4 follow-up):** **TypeScript** primary + small sandbox helper (bubblewrap primary, optional Rust Landlock helper, Docker opt-in). V2 (Python) becomes the reference spec; logic ports 1:1. See §10 for the full stack.
+7. **Sandbox backend (clarified 2026-07-07):** **bubblewrap (bwrap) primary** — Landlock securityfs is not mounted on this host, so bubblewrap namespace isolation is the actual primary (the §5.4 / decision #2 text predates that finding). Docker stays opt-in; host backend gated behind `SOPHRON_ALLOW_HOST_BACKEND=1`.
+8. **Two-tier hierarchy (decided 2026-07-07):** SophronSwarm is multi-project. There is one **global orchestrator** above all projects (the operator's "CEO", at `~/.sophron/`) plus a **per-project orchestrator** seeded into each project's `agents/` by `sophron init`. The global orchestrator proposes/creates projects; the per-project orchestrator runs each project's work. See `ROADMAP.md` (vision) + `IDEAS.md` §6.
+9. **Global orchestrator has NO memory (decided 2026-07-07):** It reads the project registry (`~/.sophron/projects.json`) and the current chat thread — nothing else. No per-agent `MEMORY.md`, no shared-memory injection. It must not inherit or interfere with any project's memory. Tool set is scoped: `delegate`, `list_projects`, `propose_project`, `init_project`, read-only file tools over `~/.sophron/`. **No** `run_command` / `apply_patch`.
+10. **Standardized per-project orchestrator = a copy (decided 2026-07-07):** `sophron init` / project creation seeds an identical `orchestrator.md` into every project's `agents/`. Each copy is independently editable and carries its own per-project memory.
+11. **Project location (decided 2026-07-07):** New projects are created at `~/sophron_workspace/<name>` and registered in `~/.sophron/projects.json`.
 
 ## 10. Technology Stack (decided)
 
@@ -276,7 +302,9 @@ V2 was Python. For V3's stated priorities (**strong front-end + speed**, multi-a
 
 ## 11. Remaining Open Questions
 
-1. **Ollama classifier model name** — pick a small local model (e.g. `qwen2.5:1.5b`, `llama3.2:1b`, or `gemma2:2b`) for the auto-mode command vetting.
+1. ~~**Ollama classifier model name**~~ — **RESOLVED (Phase 6):** `ollama:qwen3.5:9b-fast` vets each mutating command (also reused by the M1 purifier's Tier 2).
 2. **Default permission mode for the bootstrap-approved agents** — `default` (prompt) for the cautious start, or `accept-edits` to reduce friction?
+3. **Should the global orchestrator's chat history persist across sessions?** — it has no memory tier, but the Orchestrator-tab conversation list implies persistence. (Recommend: persist chat threads, but do NOT inject them as "memory".)
+4. **Health-check definitions for the Home Overview** — recommend concrete signals: failed/stuck runs, pending approvals older than N, token-budget breaches, agents in HALT.
 
-All major architectural and stack decisions are now locked (see §9). Phases 0–2 complete — see individual design and completion docs under `docs/`.
+All major architectural and stack decisions are now locked (see §9, items 1–11). Phases 0–6 + milestones M1–M2 complete; see individual design/completion docs under `docs/` and [`ROADMAP.md`](./ROADMAP.md) for the current M3–M9 plan.
