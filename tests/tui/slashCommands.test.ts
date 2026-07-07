@@ -28,6 +28,11 @@ describe("parseSlashCommand — simple commands", () => {
     expect(parseSlashCommand(cmd)).toEqual({ kind: "agents" });
   });
 
+  it("parses /projects", () => {
+    expect(parseSlashCommand("/projects")).toEqual({ kind: "projects" });
+    expect(parseSlashCommand("/p")).toEqual({ kind: "projects" });
+  });
+
   it("parses /checkpoint", () => {
     expect(parseSlashCommand("/checkpoint")).toEqual({ kind: "checkpoint" });
     expect(parseSlashCommand("/cp")).toEqual({ kind: "checkpoint" });

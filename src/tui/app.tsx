@@ -17,6 +17,7 @@
  */
 import React, { useState, useCallback, useMemo } from "react";
 import { Box, Text, useInput, useApp } from "ink";
+import { resolve } from "node:path";
 import { parseSlashCommand, HELP_TEXT } from "./slashCommands.js";
 import { buildDashboard, readRunDetail, type RunDetail } from "./dashboard.js";
 import { CheckpointManager } from "../memory/checkpoints.js";
@@ -35,13 +36,18 @@ import {
   HelpPage,
   type Page,
 } from "./components/pages.js";
+import { ProjectSwitcher } from "./components/projectSwitcher.js";
+import { switchServices } from "../services/lifecycle.js";
+import { listProjects, registerProject, type ProjectEntry } from "../project/registry.js";
 import type { SharedServices } from "../tools/schema.js";
 import type { ApprovalsQueue } from "./approvals.js";
+import type { AgentRegistry } from "../agent/registry.js";
 
 export interface AppProps {
   services: SharedServices;
   workspaceDir: string;
   approvals: ApprovalsQueue;
+  registry: AgentRegistry;
 }
 
 type Mode = "navigate" | "compose";
@@ -66,7 +72,24 @@ const PAGE_TITLES: Record<Page, string> = {
   runDetail: "Run",
 };
 
-export function App({ services, workspaceDir, approvals }: AppProps) {
+export function App({ services: initialServices, workspaceDir: initialDir, approvals: initialApprovals, registry: initialRegistry }: AppProps) {
+  // Services + workspace are in STATE so we can rebuild them on project switch.
+  // (The switch tears down the old services and builds fresh ones bound to the
+  // new project's working directory.)
+  const [services, setServices] = useState<SharedServices>(initialServices);
+  const [registry, setRegistry] = useState<AgentRegistry>(initialRegistry);
+  const [workspaceDir, setWorkspaceDir] = useState(initialDir);
+  const [activeProjectName, setActiveProjectName] = useState(() => {
+    const entry = listProjects().find((p) => p.path === resolve(initialDir));
+    return entry?.name ?? (initialDir.split("/").pop() || "project");
+  });
+  const [approvals, setApprovals] = useState<ApprovalsQueue>(initialApprovals);
+  // Project switcher overlay (Ctrl+P).
+  const [showSwitcher, setShowSwitcher] = useState(false);
+  const [switcherIndex, setSwitcherIndex] = useState(0);
+  // Whether a project switch is in progress (disables input during rebuild).
+  const [switching, setSwitching] = useState(false);
+
   const [page, setPage] = useState<Page>("home");
   // Per-list selection indices (each navigable list owns its own cursor).
   const [homeIndex, setHomeIndex] = useState(0);
@@ -92,6 +115,40 @@ export function App({ services, workspaceDir, approvals }: AppProps) {
   const pushBlock = useCallback((text: string, color?: string) => {
     setBlocks((prev) => [...prev.slice(-7), { id: prev.length, text, color }]);
   }, []);
+
+  /**
+   * Switch to a different project. Tears down the current services (DB, MCP
+   * pool, watcher) and rebuilds fresh ones bound to the new working directory.
+   * Registers the project if it's new. Disables input during the rebuild.
+   */
+  const switchProject = useCallback(
+    async (projectPath: string) => {
+      const absPath = resolve(projectPath);
+      setSwitching(true);
+      setShowSwitcher(false);
+      pushBlock(`Switching to ${absPath}…`, "yellow");
+      try {
+        const entry = registerProject(absPath);
+        const { services: newServices, registry: newRegistry } = await switchServices(services, registry, absPath);
+        setServices(newServices);
+        setRegistry(newRegistry);
+        setApprovals(newServices.approvals);
+        setWorkspaceDir(absPath);
+        setActiveProjectName(entry.name);
+        setPage("home");
+        setHomeIndex(0);
+        setSelectedAgent(null);
+        setSelectedRunId(null);
+        setRunDetail(null);
+        pushBlock(`Switched to project: ${entry.name}`, "green");
+      } catch (e) {
+        pushBlock(`Switch failed: ${(e as Error).message}`, "red");
+      } finally {
+        setSwitching(false);
+      }
+    },
+    [services, registry, pushBlock],
+  );
 
   /** Navigate to a page, refreshing any page-specific state. */
   const navigateTo = useCallback(
@@ -132,6 +189,10 @@ export function App({ services, workspaceDir, approvals }: AppProps) {
       switch (cmd.kind) {
         case "help":
           navigateTo("help");
+          break;
+        case "projects":
+          setSwitcherIndex(0);
+          setShowSwitcher(true);
           break;
         case "agents":
           navigateTo("agents");
@@ -206,6 +267,39 @@ export function App({ services, workspaceDir, approvals }: AppProps) {
     // Ctrl+C always exits.
     if (key.ctrl && inputChar === "c") {
       exit();
+      return;
+    }
+
+    // Disable input during a project switch (services are being rebuilt).
+    if (switching) return;
+
+    // ── Project switcher overlay (takes over input when visible) ──
+    if (showSwitcher) {
+      const projects = listProjects();
+      if (key.return) {
+        const sel = projects[switcherIndex];
+        if (sel) {
+          void switchProject(sel.path);
+        } else {
+          setShowSwitcher(false);
+        }
+        return;
+      }
+      if (key.escape) {
+        setShowSwitcher(false);
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setSwitcherIndex((p) => clampIndex(p + (key.upArrow ? -1 : 1), Math.max(projects.length, 1)));
+        return;
+      }
+      return; // swallow other keys while the overlay is up
+    }
+
+    // Ctrl+P toggles the project switcher.
+    if (key.ctrl && inputChar === "p") {
+      setSwitcherIndex(0);
+      setShowSwitcher((v) => !v);
       return;
     }
 
@@ -303,10 +397,14 @@ export function App({ services, workspaceDir, approvals }: AppProps) {
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* ── Breadcrumb ── */}
+      {/* ── Breadcrumb (includes active project name) ── */}
       <Box marginBottom={1}>
         <Text dimColor>
           SophronSwarm V3 ›{" "}
+          <Text bold color="magenta">
+            {activeProjectName}
+          </Text>
+          <Text dimColor> › </Text>
           <Text bold color="cyan">
             {page === "agentDetail" && selectedAgent
               ? `Agents › ${selectedAgent}`
@@ -335,6 +433,22 @@ export function App({ services, workspaceDir, approvals }: AppProps) {
         {page === "help" && <HelpPage />}
       </Box>
 
+      {/* ── Project switcher overlay (Ctrl+P / /projects) ── */}
+      {showSwitcher && (
+        <ProjectSwitcher
+          projects={listProjects()}
+          activePath={workspaceDir}
+          selectedIndex={switcherIndex}
+        />
+      )}
+      {switching && (
+        <Box marginTop={1}>
+          <Text bold color="yellow">
+            ⟳ Switching project…
+          </Text>
+        </Box>
+      )}
+
       {/* ── Output log ── */}
       {blocks.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
@@ -362,13 +476,15 @@ export function App({ services, workspaceDir, approvals }: AppProps) {
       <Text dimColor>
         {mode === "compose"
           ? " Enter submit · Esc cancel · Ctrl+C exit"
-          : page === "home"
-            ? " ↑↓ navigate · Enter select · Esc exit · type to enter a command"
-            : page === "agents" || page === "runs"
-              ? " ↑↓ navigate · Enter open · Esc back · type to enter a command"
-              : page === "agentDetail" || page === "runDetail"
-                ? " Esc back · type to enter a command · Ctrl+C exit"
-                : " Esc back to menu · type to enter a command · Ctrl+C exit"}
+          : showSwitcher
+            ? " ↑↓ select · Enter switch · Esc cancel"
+            : page === "home"
+              ? " ↑↓ navigate · Enter select · Ctrl+P switch project · Esc exit · type to command"
+              : page === "agents" || page === "runs"
+                ? " ↑↓ navigate · Enter open · Esc back · Ctrl+P switch · type to command"
+                : page === "agentDetail" || page === "runDetail"
+                  ? " Esc back · Ctrl+P switch project · type to command · Ctrl+C exit"
+                  : " Esc back to menu · Ctrl+P switch project · type to command · Ctrl+C exit"}
       </Text>
     </Box>
   );

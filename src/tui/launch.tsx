@@ -9,16 +9,24 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
 import type { SharedServices } from "../tools/schema.js";
+import type { AgentRegistry } from "../agent/registry.js";
 
 export interface LaunchOptions {
   services: SharedServices;
   workspaceDir: string;
+  /** The registry bound to the current project (for teardown on switch). */
+  registry: AgentRegistry;
 }
 
 export async function launchTui(opts: LaunchOptions): Promise<void> {
   // Use the approvals queue constructed in buildServices so the gate + TUI share state.
   const { waitUntilExit } = render(
-    <App services={opts.services} workspaceDir={opts.workspaceDir} approvals={opts.services.approvals} />,
+    <App
+      services={opts.services}
+      workspaceDir={opts.workspaceDir}
+      approvals={opts.services.approvals}
+      registry={opts.registry}
+    />,
   );
   await waitUntilExit();
 }

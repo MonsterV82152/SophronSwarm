@@ -12,60 +12,11 @@ import { resolve } from "node:path";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
 import { listProviders, getProvider } from "./llm/providers.js";
-import { ToolRegistry } from "./tools/registry.js";
-import { ToolDispatcher } from "./tools/dispatcher.js";
-import { BUILTIN_TOOLS } from "./tools/builtin/index.js";
-import { Purifier } from "./tools/purifier.js";
-import { Checkpointer } from "./state/checkpointer.js";
 import { AgentRegistry } from "./agent/registry.js";
-import { SharedMemoryStore, SHARED_DIR_NAME } from "./memory/sharedStore.js";
-import { AgentMemoryStore, AGENT_MEMORY_DIR_NAME } from "./memory/agentStore.js";
-import { loadGlobalConfig } from "./mcp/config.js";
-import { McpConnectionPool } from "./mcp/pool.js";
-import { McpToolCatalog } from "./mcp/catalog.js";
-import { TokenCostMeter } from "./mcp/costMeter.js";
-import { ApprovalsQueue } from "./tui/approvals.js";
-import { LlmAutoModeClassifier, AutoPermissionGate } from "./agent/autoGate.js";
+import { buildServices, closeServices } from "./services/lifecycle.js";
+import { registerProject } from "./project/registry.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
-import type { SharedServices } from "./tools/schema.js";
-
-function buildServices(workingDir: string, registry: AgentRegistry): SharedServices {
-  const toolRegistry = new ToolRegistry();
-  for (const t of BUILTIN_TOOLS) toolRegistry.register(t);
-  const llm = new LLMClient();
-  const approvals = new ApprovalsQueue();
-  const classifier = new LlmAutoModeClassifier(llm);
-  const dispatcher = new ToolDispatcher(toolRegistry, new AutoPermissionGate(classifier, approvals));
-  const checkpointer = new Checkpointer(resolve(workingDir, ".sophron", "checkpoint.db"));
-  const sharedMemoryStore = new SharedMemoryStore(resolve(workingDir, SHARED_DIR_NAME));
-  const agentMemoryStore = new AgentMemoryStore(resolve(workingDir, AGENT_MEMORY_DIR_NAME));
-
-  // MCP: load global config + register every server's config with the pool.
-  // Per-agent scoping happens at run time (the agent's mcpServers frontmatter
-  // is resolved against the pool's configured servers).
-  const mcpConfig = loadGlobalConfig(workingDir);
-  const mcpPool = new McpConnectionPool(mcpConfig.servers);
-  const mcpCatalog = new McpToolCatalog(mcpPool);
-  const mcpCostMeter = new TokenCostMeter();
-  const purifier = new Purifier({ llm });
-
-  return {
-    llm,
-    agentRegistry: registry,
-    toolRegistry,
-    dispatcher,
-    checkpointer,
-    sharedMemoryStore,
-    agentMemoryStore,
-    mcpPool,
-    mcpCatalog,
-    mcpCostMeter,
-    approvals,
-    purifier,
-  };
-}
-
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
 
@@ -125,8 +76,8 @@ export async function runCli(argv: string[]): Promise<void> {
         log.error({ err: e }, "run failed");
         process.exitCode = 1;
       } finally {
-        // Close MCP server connections (subprocesses / HTTP sessions).
-        await services.mcpPool.closeAll().catch(() => {});
+        // Tear down services (MCP pool, DB, watcher).
+        await closeServices(services);
       }
     });
 
@@ -136,16 +87,17 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("-d, --dir <path>", "working directory", process.cwd())
     .action(async (opts: { dir: string }) => {
       const workingDir = resolve(opts.dir);
+      // Register this project so it appears in the switcher / overview.
+      registerProject(workingDir);
       const registry = new AgentRegistry();
       registry.scan();
       registry.startWatch();
       const services = buildServices(workingDir, registry);
       const { launchTui } = await import("./tui/launch.js");
       try {
-        await launchTui({ services, workspaceDir: workingDir });
+        await launchTui({ services, workspaceDir: workingDir, registry });
       } finally {
-        await registry.stopWatch();
-        await services.mcpPool.closeAll().catch(() => {});
+        await closeServices(services, registry);
       }
     });
 

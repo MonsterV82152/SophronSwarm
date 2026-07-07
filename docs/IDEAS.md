@@ -100,7 +100,7 @@ LocalAI, TGI, llama.cpp server).
 
 ---
 
-## 2. Project-scoped TUI navigation — 🟡 Needs decision
+## 2. Project-scoped TUI navigation — ✅ BUILT (M3, core)
 
 ### The question
 Operator vision: `Home (everything) → Projects (list) → Project 1 (agents,

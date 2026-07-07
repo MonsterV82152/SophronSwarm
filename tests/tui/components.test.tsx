@@ -22,6 +22,8 @@ import {
   HOME_MENU,
   type Page,
 } from "../../src/tui/components/pages.js";
+import { ProjectSwitcher } from "../../src/tui/components/projectSwitcher.js";
+import type { ProjectEntry } from "../../src/project/registry.js";
 import type { DashboardModel, RunDetail } from "../../src/tui/dashboard.js";
 import React from "react";
 
@@ -314,5 +316,53 @@ describe("HelpPage", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("/agents");
     expect(frame).toContain("/run");
+  });
+});
+
+// ── Project Switcher ────────────────────────────────────────────────────────
+
+function makeProject(overrides: Partial<ProjectEntry> = {}): ProjectEntry {
+  return { name: "test-proj", path: "/projects/test", lastOpened: 1000, ...overrides };
+}
+
+describe("ProjectSwitcher", () => {
+  it("shows empty hint when no projects registered", () => {
+    const { lastFrame } = render(<ProjectSwitcher projects={[]} activePath="/x" selectedIndex={0} />);
+    expect(lastFrame() ?? "").toContain("no projects registered");
+  });
+
+  it("lists registered projects with names", () => {
+    const projects = [
+      makeProject({ name: "webapp", path: "/projects/webapp" }),
+      makeProject({ name: "cli", path: "/projects/cli" }),
+    ];
+    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/projects/webapp" selectedIndex={0} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("webapp");
+    expect(frame).toContain("cli");
+    expect(frame).toContain("Switch Project");
+  });
+
+  it("marks the active project", () => {
+    const projects = [makeProject({ name: "active", path: "/active" }), makeProject({ name: "other", path: "/other" })];
+    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/active" selectedIndex={0} />);
+    expect(lastFrame() ?? "").toContain("(active)");
+  });
+
+  it("shows the selection marker on the selected row", () => {
+    const projects = [makeProject({ name: "a", path: "/a" }), makeProject({ name: "b", path: "/b" })];
+    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/a" selectedIndex={1} />);
+    const frame = lastFrame() ?? "";
+    // The second item should have the ▸ marker; the first should not.
+    const lines = frame.split("\n");
+    const selectedLine = lines.find((l) => l.includes("▸"));
+    expect(selectedLine).toBeDefined();
+    expect(selectedLine!).toContain("b");
+  });
+
+  it("shows a pinned marker on pinned projects", () => {
+    const projects = [makeProject({ name: "pinned", path: "/p", pinned: true })];
+    const { lastFrame } = render(<ProjectSwitcher projects={projects} activePath="/x" selectedIndex={0} />);
+    expect(lastFrame() ?? "").toContain("📌");
   });
 });

@@ -11,6 +11,7 @@
 
 export type SlashCommand =
   | { kind: "help" }
+  | { kind: "projects" }
   | { kind: "agents" }
   | { kind: "runs"; limit?: number }
   | { kind: "checkpoint" }
@@ -49,6 +50,9 @@ export function parseSlashCommand(input: string): SlashCommand {
     case "/h":
     case "/?":
       return { kind: "help" };
+    case "/projects":
+    case "/p":
+      return { kind: "projects" };
     case "/agents":
     case "/a":
       return { kind: "agents" };
