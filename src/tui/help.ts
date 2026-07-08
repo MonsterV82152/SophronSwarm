@@ -60,10 +60,15 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
   and projects needing attention (failed last run).
   No drill-in — use ←/→ to reach Orchestrator or Projects.`,
 
-  "home:orchestrator": `── Orchestrator ──
-  (stub) The global orchestrator is not yet built (ROADMAP M7/M8).
-  Once built, this is where you propose and create projects by chatting
-  with the "CEO" agent. ←/→ to other tabs.`,
+  "home:orchestrator": `── Orchestrator (global) ──
+  Chat with the global orchestrator — your "CEO" for the whole workspace.
+  It manages the project lifecycle (propose / create / list projects) with
+  NO memory and NO codebase workspace.
+  Type below to chat (e.g. "I want to build a CLI tool for X").
+  /projects  Jump to the Projects tab to enter a created project
+  /clear     Clear the output log (chat history persists for the session)
+
+  Install: sophron init --install-orchestrator`,
 
   "home:projects": `── Projects ──
   ↑/↓ to select a project · Enter to open it (switches workspace).

@@ -9,7 +9,7 @@
  * ## The model
  *
  * Two **surfaces**, each with a horizontal tab bar:
- *   - **home**    — Overview · Orchestrator(stub) · Projects
+ *   - **home**    — Overview · Orchestrator (global chat, M8) · Projects
  *   - **project** — Status · Agents · Runs · Checkpoint · Memory · Cost
  *
  * Three **focus zones** (where keystrokes go):
@@ -190,10 +190,7 @@ export function navReducer(
       if (state.agentDetail || state.runDetail) return state;
       // Overview is display-only — no content focus. Stay on tabs (no-op).
       if (state.surface === "home" && activeHomeTab(state) === "overview") return state;
-      // Orchestrator is a stub — enter shows it but content is non-navigable.
-      if (state.surface === "home" && activeHomeTab(state) === "orchestrator") {
-        return { ...state, focus: "content" };
-      }
+      // All other tabs (incl. Orchestrator chat) drill into content focus.
       return { ...state, focus: "content" };
     }
 

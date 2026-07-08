@@ -13,7 +13,7 @@ import { TabBar } from "../../src/tui/components/TabBar.js";
 import { InputBar } from "../../src/tui/components/InputBar.js";
 import { Banner } from "../../src/tui/components/Banner.js";
 import { OverviewTab } from "../../src/tui/components/OverviewTab.js";
-import { OrchestratorTab } from "../../src/tui/components/OrchestratorTab.js";
+import { OrchestratorChat, type ChatMessage } from "../../src/tui/components/OrchestratorChat.js";
 import { ProjectsTab } from "../../src/tui/components/ProjectsTab.js";
 import {
   StatusTab,
@@ -170,8 +170,8 @@ describe("OverviewTab", () => {
     const ov = makeOverview({
       totalProjects: 2,
       projects: [
-        makeProject({ name: "active-one", runCount: 3, lastRunStatus: "complete" }),
-        makeProject({ name: "other" }),
+        makeProject({ name: "active-one", path: "/x/active-one", runCount: 3, lastRunStatus: "complete" }),
+        makeProject({ name: "other", path: "/x/other" }),
       ],
     });
     const { lastFrame } = render(<OverviewTab overview={ov} activeProjectName="active-one" />);
@@ -187,12 +187,45 @@ describe("OverviewTab", () => {
   });
 });
 
-describe("OrchestratorTab", () => {
-  it("renders the stub notice", () => {
-    const { lastFrame } = render(<OrchestratorTab />);
+describe("OrchestratorChat", () => {
+  const sampleMessages: ChatMessage[] = [
+    { id: 1, role: "user", text: "I want to build a CLI tool." },
+    { id: 2, role: "orchestrator", text: "Great. What language?" },
+  ];
+
+  it("renders the chat thread with user + orchestrator messages", () => {
+    const { lastFrame } = render(
+      <OrchestratorChat messages={sampleMessages} running={false} installed={true} onSubmit={() => {}} />,
+    );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("not yet built");
-    expect(frame).toContain("Orchestrator");
+    expect(frame).toContain("Global Orchestrator");
+    expect(frame).toContain("you ›");
+    expect(frame).toContain("CLI tool");
+    expect(frame).toContain("🧭 ›");
+    expect(frame).toContain("What language?");
+  });
+
+  it("shows a thinking indicator when running", () => {
+    const { lastFrame } = render(
+      <OrchestratorChat messages={sampleMessages} running={true} installed={true} onSubmit={() => {}} />,
+    );
+    expect(lastFrame() ?? "").toContain("thinking");
+  });
+
+  it("shows an install hint when not installed", () => {
+    const { lastFrame } = render(
+      <OrchestratorChat messages={[]} running={false} installed={false} onSubmit={() => {}} />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("not installed");
+    expect(frame).toContain("install-orchestrator");
+  });
+
+  it("shows a prompt when installed + no messages yet", () => {
+    const { lastFrame } = render(
+      <OrchestratorChat messages={[]} running={false} installed={true} onSubmit={() => {}} />,
+    );
+    expect(lastFrame() ?? "").toContain("No messages yet");
   });
 });
 

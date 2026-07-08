@@ -2,7 +2,7 @@
  * App — the SophronSwarm TUI shell (M3 rewrite).
  *
  * Box-chrome shell with two surfaces, each with a horizontal tab bar:
- *   - **home**    — Overview · Orchestrator(stub) · Projects
+ *   - **home**    — Overview · Orchestrator (global chat, M8) · Projects
  *   - **project** — Status · Agents · Runs · Checkpoint · Memory · Cost
  *
  * Navigation is owned by the pure reducer in `nav.ts` (the fix for the first
@@ -16,6 +16,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { resolve } from "node:path";
+import { homedir } from "node:os";
 import { parseSlashCommand } from "./slashCommands.js";
 import { helpForView, helpViewFor } from "./help.js";
 import { buildDashboard, buildOverview, readRunDetail, type OverviewModel, type RunDetail } from "./dashboard.js";
@@ -36,7 +37,6 @@ import { Banner } from "./components/Banner.js";
 import { TabBar } from "./components/TabBar.js";
 import { InputBar } from "./components/InputBar.js";
 import { OverviewTab } from "./components/OverviewTab.js";
-import { OrchestratorTab } from "./components/OrchestratorTab.js";
 import { ProjectsTab } from "./components/ProjectsTab.js";
 import {
   StatusTab,
@@ -48,7 +48,9 @@ import {
   CostTab,
 } from "./components/ProjectTabs.js";
 import { AgentDetail } from "./components/AgentDetail.js";
+import { OrchestratorChat, type ChatMessage } from "./components/OrchestratorChat.js";
 import { switchServices } from "../services/lifecycle.js";
+import { runAgent } from "../agent/loop.js";
 import { listProjects, registerProject, type ProjectEntry } from "../project/registry.js";
 import type { SharedServices } from "../tools/schema.js";
 import type { ApprovalsQueue } from "./approvals.js";
@@ -91,6 +93,16 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   const [memoryLabel, setMemoryLabel] = useState("shared memory files");
   // ── Run detail (drill-down from Runs) ──
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
+
+  // ── Global orchestrator chat (M8) ──
+  const [orchestratorMessages, setOrchestratorMessages] = useState<ChatMessage[]>([]);
+  const [orchestratorRunning, setOrchestratorRunning] = useState(false);
+  // Monotonic message ID counter (avoids Date.now() collisions if two messages
+  // land in the same millisecond).
+  const msgIdRef = useRef(0);
+  const nextMsgId = useCallback(() => ++msgIdRef.current, []);
+  // Whether the global-orchestrator agent is installed (checked lazily).
+  const orchestratorInstalled = useMemo(() => registry.get("global-orchestrator") != null, [registry]);
 
   // ── Dashboard model (recomputed when services/workspace change) ──
   const model = useMemo(
@@ -142,8 +154,13 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         setApprovals(newServices.approvals);
         setWorkspaceDir(absPath);
         setActiveProjectName(entry.name);
-        setNav((prev) => ({ ...prev, surface: "project", focus: "tabs", agentDetail: null, runDetail: null, agentsIndex: 0, runsIndex: 0 }));
+        // Full nav reset — don't spread prev (stale tab indices + input leak
+        // across projects). Start fresh on the Status tab of the new project.
+        setNav({ ...initialNavState(), surface: "project", focus: "tabs" });
         setRunDetail(null);
+        // Clear stale output-log entries from the previous project context.
+        setBlocks([]);
+        setMemoryContent("");
         pushBlock(`Switched to project: ${entry.name}`, "green");
       } catch (e) {
         pushBlock(`Switch failed: ${(e as Error).message}`, "red");
@@ -152,6 +169,57 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       }
     },
     [services, registry, pushBlock],
+  );
+
+  // ── Global orchestrator chat (M8) ──
+  // Runs the global-orchestrator agent loop with the operator's message as the
+  // task. The global orchestrator lives at ~/.sophron/agents/global-orchestrator.md
+  // and has NO memory + NO codebase workspace — it only manages the project
+  // lifecycle (propose / create / list). Its working dir is ~/.sophron/.
+  const handleOrchestratorMessage = useCallback(
+    async (text: string) => {
+      const agent = registry.get("global-orchestrator");
+      if (!agent) {
+        setOrchestratorMessages((prev) => [
+          ...prev,
+          {
+            id: nextMsgId(),
+            role: "orchestrator",
+            text: "The global orchestrator is not installed. Run:\n  sophron init --install-orchestrator",
+          },
+        ]);
+        return;
+      }
+
+      // Append the user's message + a "thinking" marker.
+      setOrchestratorMessages((prev) => [...prev, { id: nextMsgId(), role: "user", text }]);
+      setOrchestratorRunning(true);
+      try {
+        const result = await runAgent({
+          agent,
+          task: text,
+          workingDir: resolve(homedir(), ".sophron"),
+          llm: services.llm,
+          dispatcher: services.dispatcher,
+          checkpointer: services.checkpointer,
+          services,
+        });
+        const reply = result.state.messages
+          .filter((m) => m.role === "assistant" && m.content)
+          .map((m) => m.content as string)
+          .join("\n")
+          .trim() || "(no response)";
+        setOrchestratorMessages((prev) => [...prev, { id: nextMsgId(), role: "orchestrator", text: reply }]);
+      } catch (e) {
+        setOrchestratorMessages((prev) => [
+          ...prev,
+          { id: nextMsgId(), role: "orchestrator", text: `Error: ${(e as Error).message}` },
+        ]);
+      } finally {
+        setOrchestratorRunning(false);
+      }
+    },
+    [registry, services, nextMsgId],
   );
 
   // ── Open the selected list item (Enter in content focus) ──
@@ -182,6 +250,16 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   // ── Command handling (slash commands + free-text tasks) ──
   const handleCommand = useCallback(
     (raw: string) => {
+      // On the Orchestrator tab, free text is a message to the global orchestrator.
+      if (
+        !raw.startsWith("/") &&
+        nav.surface === "home" &&
+        activeHomeTab(nav) === "orchestrator" &&
+        !orchestratorRunning
+      ) {
+        void handleOrchestratorMessage(raw);
+        return;
+      }
       // On Agent detail, free text is a task for THAT agent.
       if (nav.agentDetail && !raw.startsWith("/")) {
         pushBlock(`${nav.agentDetail}> ${raw}`, "yellow");
@@ -248,6 +326,11 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
         case "clear":
           setBlocks([]);
+          // On the Orchestrator tab, /clear also resets the chat thread.
+          if (nav.surface === "home" && activeHomeTab(nav) === "orchestrator") {
+            setOrchestratorMessages([]);
+            pushBlock("Cleared chat thread + output log.", "gray");
+          }
           break;
         case "quit":
           exit();
@@ -265,7 +348,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
       }
     },
-    [nav.surface, nav.agentDetail, services, approvals, pushBlock, exit],
+    [nav.surface, nav.agentDetail, nav.homeTabIndex, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning],
   );
 
   // ── Keyboard input → nav actions ──
@@ -404,9 +487,12 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       </Box>
 
       {/* ── Content area ── */}
-      <Box flexDirection="column" flexGrow={1}>
+      {/* key forces a full remount on surface/project change so Ink clears the
+          previous content's lines completely (avoids ghost lines bleeding from
+          one surface/project into the next). */}
+      <Box key={`${nav.surface}:${activeProjectName}`} flexDirection="column" flexGrow={1}>
         {isHome ? (
-          <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} />
+          <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
         ) : (
           <ProjectContent
             nav={nav}
@@ -449,19 +535,34 @@ function HomeContent({
   activeProjectName,
   projects,
   activeProjectPath,
+  onOrchestratorMessage,
+  orchestratorMessages,
+  orchestratorRunning,
+  orchestratorInstalled,
 }: {
   nav: NavState;
   overview: OverviewModel;
   activeProjectName: string;
   projects: ProjectEntry[];
   activeProjectPath: string;
+  onOrchestratorMessage: (text: string) => void;
+  orchestratorMessages: ChatMessage[];
+  orchestratorRunning: boolean;
+  orchestratorInstalled: boolean;
 }) {
   const tab = activeHomeTab(nav);
   if (tab === "overview") {
     return <OverviewTab overview={overview} activeProjectName={activeProjectName} />;
   }
   if (tab === "orchestrator") {
-    return <OrchestratorTab />;
+    return (
+      <OrchestratorChat
+        messages={orchestratorMessages}
+        running={orchestratorRunning}
+        installed={orchestratorInstalled}
+        onSubmit={onOrchestratorMessage}
+      />
+    );
   }
   return <ProjectsTab projects={projects} selectedIndex={nav.projectsIndex} activePath={activeProjectPath} />;
 }

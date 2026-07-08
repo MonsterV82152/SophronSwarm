@@ -64,7 +64,7 @@ export function OverviewTab({ overview, activeProjectName }: OverviewTabProps) {
           const isActive = p.name === activeProjectName;
           const statusColor = p.lastRunFailed ? "red" : p.runCount > 0 ? "green" : "gray";
           return (
-            <Box key={p.path} marginBottom={1}>
+            <Box key={`${p.name}:${p.path}`} marginBottom={1}>
               <Text>
                 {"  "}
                 {p.pinned ? "📌 " : "   "}

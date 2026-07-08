@@ -59,11 +59,12 @@ describe("helpForView — per-view sections", () => {
     expect(text).toContain("Display-only");
   });
 
-  it("home:orchestrator notes the stub + M7/M8", () => {
+  it("home:orchestrator describes the global chat (M8)", () => {
     const text = helpForView("home:orchestrator");
     expect(text).toContain("Orchestrator");
-    expect(text).toContain("stub");
-    expect(text).toContain("M7");
+    expect(text).toContain("global");
+    expect(text).toContain("propose");
+    expect(text).toContain("install-orchestrator");
   });
 
   it("home:projects shows ↑/↓ + Enter to switch", () => {
