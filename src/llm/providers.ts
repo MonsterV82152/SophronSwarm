@@ -76,7 +76,7 @@ export interface ModelResolution {
 // ── Config schema ───────────────────────────────────────────────────────────
 
 /** A provider instance as written in config.json (before env expansion). */
-interface RawProviderEntry {
+export interface RawProviderEntry {
   name: string;
   kind?: string; // optional for legacy/migration; inferred if missing
   baseURL?: string;
@@ -524,4 +524,118 @@ export function removeProviderInstance(name: string): boolean {
   cfg.providers = filtered;
   writeRawConfig(cfg);
   return true;
+}
+
+// ── Edit (partial update) ───────────────────────────────────────────────────
+
+/**
+ * A partial update to an existing provider instance. Each field is optional:
+ *   - `undefined` (field absent) → keep the current value untouched.
+ *   - a non-empty string → set the field to this value.
+ *   - an empty string `""` → CLEAR the field (remove it).
+ *   - (`default`) `true`/`false` → set/clear the default-for-kind flag.
+ *
+ * Note: `kind` cannot be changed via a patch (changing kind = a fundamentally
+ * different provider; remove + re-add instead). `name` is the lookup key.
+ */
+export interface ProviderPatch {
+  baseURL?: string;
+  apiKey?: string;
+  defaultModel?: string;
+  default?: boolean;
+}
+
+/**
+ * Read the RAW (unexpanded) provider entry from config.json by name. Returns
+ * `undefined` if no config entry exists for this name — which includes the
+ * built-in singletons ("ollama"/"openrouter"/"zai") when they exist only via
+ * env-backed defaults. Useful for pre-filling edit prompts with the exact
+ * on-disk values (including `${ENV_VAR}` references, pre-expansion).
+ */
+export function getRawProviderEntry(name: string): RawProviderEntry | undefined {
+  const cfg = readRawConfigFresh();
+  if (!cfg.providers || !Array.isArray(cfg.providers)) return undefined;
+  return cfg.providers.find((e) => e.name === name);
+}
+
+/** Apply a patch to a raw entry in place. See ProviderPatch semantics. */
+function applyPatchToEntry(entry: RawProviderEntry, patch: ProviderPatch): void {
+  if (patch.baseURL !== undefined) {
+    const v = patch.baseURL.trim();
+    if (v) entry.baseURL = v;
+    else delete entry.baseURL;
+  }
+  if (patch.apiKey !== undefined) {
+    const v = patch.apiKey.trim();
+    if (v) entry.apiKey = v;
+    else delete entry.apiKey;
+  }
+  if (patch.defaultModel !== undefined) {
+    const v = patch.defaultModel.trim();
+    if (v) entry.defaultModel = v;
+    else delete entry.defaultModel;
+  }
+  if (patch.default !== undefined) {
+    if (patch.default) entry.default = true;
+    else delete entry.default;
+  }
+}
+
+/**
+ * Partially update an existing provider instance in `~/.sophron/config.json`.
+ * Only the fields present in `patch` are touched; all others keep their current
+ * value. This is the "edit" counterpart to addProviderInstance — no need to
+ * remove + re-add just to set an API key.
+ *
+ * Handles the built-in-singleton case: if the named instance exists in the
+ * resolved list (e.g. the env-backed "openrouter") but has NO config.json
+ * entry, a new entry is created from its current resolved state + the patch.
+ *
+ * @returns the resulting raw entry (post-patch, exactly what's on disk).
+ * @throws if the name doesn't match any provider (config or built-in).
+ */
+export function updateProviderInstance(name: string, patch: ProviderPatch): RawProviderEntry {
+  if (!name.trim()) throw new Error("Provider 'name' is required.");
+  const cfg = readRawConfigFresh();
+
+  // Normalize providers to the array form (same as addProviderInstance).
+  let arr: RawProviderEntry[];
+  if (!cfg.providers) {
+    arr = [];
+  } else if (Array.isArray(cfg.providers)) {
+    arr = cfg.providers;
+  } else {
+    log.warn("config.providers is an object (legacy form); migrating to a named-instance array.");
+    arr = Object.entries(cfg.providers).map(([kind, fields]) => ({ name: kind, kind, ...(fields as object) }));
+  }
+
+  const idx = arr.findIndex((e) => e.name === name);
+
+  if (idx >= 0) {
+    // ── Existing config entry: merge the patch (partial update) ──
+    const updated: RawProviderEntry = { ...arr[idx]! };
+    applyPatchToEntry(updated, patch);
+    arr[idx] = updated;
+  } else {
+    // ── No config entry: must be a built-in singleton (or unknown) ──
+    // Resolve the current state so we can persist a concrete config entry.
+    _resetProviderCacheForTests();
+    let resolved: ProviderConfig;
+    try {
+      resolved = getProvider(name);
+    } catch {
+      throw new Error(`No provider instance named '${name}'. Use 'sophron add-provider' to create one, or 'sophron providers' to list configured instances.`);
+    }
+    // Seed a new entry from the resolved (env-expanded) state, then apply patch.
+    const entry: RawProviderEntry = { name, kind: resolved.kind };
+    if (resolved.baseURL) entry.baseURL = resolved.baseURL;
+    if (resolved.apiKey) entry.apiKey = resolved.apiKey;
+    if (resolved.defaultModel) entry.defaultModel = resolved.defaultModel;
+    applyPatchToEntry(entry, patch);
+    arr.push(entry);
+  }
+
+  cfg.providers = arr;
+  writeRawConfig(cfg);
+  return arr.find((e) => e.name === name)!;
 }

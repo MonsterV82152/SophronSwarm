@@ -25,6 +25,8 @@ sophron agents [--drafts|--approve <n>...|--reject <n>...]   # list / manage dra
 # LLM providers (config in ~/.sophron/config.json)
 sophron add-provider                     # interactive: prompt for name/kind/url/key/model
 sophron add-provider --name x --kind ollama --model qwen3.5:9b   # non-interactive (flags)
+sophron edit-provider <name>             # edit existing (add/change an API key, etc.)
+sophron edit-provider <name> --api-key '${OPENROUTER_API_KEY}'  # non-interactive edit
 sophron remove-provider <name>           # remove an instance
 sophron providers [name]                 # list instances (or test connectivity for one)
 

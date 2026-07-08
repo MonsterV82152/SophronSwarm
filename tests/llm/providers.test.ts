@@ -11,6 +11,8 @@ import {
   resolveModelWithProvider,
   addProviderInstance,
   removeProviderInstance,
+  updateProviderInstance,
+  getRawProviderEntry,
   configPath,
   _resetProviderCacheForTests,
   type ProviderConfig,
@@ -461,5 +463,148 @@ describe("removeProviderInstance", () => {
 
   it("is a no-op when no config / legacy form exists", () => {
     expect(removeProviderInstance("x")).toBe(false);
+  });
+});
+
+// ── updateProviderInstance / getRawProviderEntry (sophron edit-provider) ─────
+
+describe("getRawProviderEntry", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "sophron-raw-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    _resetProviderCacheForTests();
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
+
+  it("returns the raw (unexpanded) entry from config.json", () => {
+    addProviderInstance({ name: "or", kind: "openrouter", apiKey: "${OPENROUTER_API_KEY}", defaultModel: "claude-sonnet-4" });
+    const raw = getRawProviderEntry("or");
+    expect(raw).toBeDefined();
+    expect(raw!.apiKey).toBe("${OPENROUTER_API_KEY}"); // NOT expanded
+    expect(raw!.defaultModel).toBe("claude-sonnet-4");
+  });
+
+  it("returns undefined for a built-in with no config entry", () => {
+    // "ollama" exists as a built-in singleton, but has no config.json entry.
+    expect(getRawProviderEntry("ollama")).toBeUndefined();
+    expect(getRawProviderEntry("openrouter")).toBeUndefined();
+  });
+
+  it("returns undefined for a non-existent name", () => {
+    expect(getRawProviderEntry("ghost")).toBeUndefined();
+  });
+});
+
+describe("updateProviderInstance", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "sophron-edit-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    // Clear provider env so built-in defaults are predictable.
+    for (const k of ["OPENROUTER_API_KEY", "OPENROUTER_DEFAULT_MODEL", "ZAI_API_KEY", "OLLAMA_BASE_URL"]) {
+      delete process.env[k];
+    }
+    _resetProviderCacheForTests();
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
+
+  function readConfig(): { providers: { name: string; apiKey?: string; baseURL?: string; defaultModel?: string; default?: boolean }[] } {
+    return JSON.parse(readFileSync(join(home, ".sophron", "config.json"), "utf8"));
+  }
+
+  it("updates a single field without touching the others", () => {
+    addProviderInstance({ name: "or", kind: "openrouter", baseURL: "https://openrouter.ai/api/v1", defaultModel: "old-model" });
+    const stored = updateProviderInstance("or", { apiKey: "sk-new-key" });
+    expect(stored.apiKey).toBe("sk-new-key");
+    // Other fields preserved.
+    expect(stored.baseURL).toBe("https://openrouter.ai/api/v1");
+    expect(stored.defaultModel).toBe("old-model");
+  });
+
+  it("adds an API key to a provider that has none (the primary use case)", () => {
+    addProviderInstance({ name: "keyless", kind: "openrouter", baseURL: "https://openrouter.ai/api/v1", defaultModel: "claude" });
+    // Verify it has no key initially.
+    expect(readConfig().providers[0]!.apiKey).toBeUndefined();
+    updateProviderInstance("keyless", { apiKey: "sk-secret" });
+    expect(readConfig().providers[0]!.apiKey).toBe("sk-secret");
+    // Resolves after cache reset.
+    _resetProviderCacheForTests();
+    expect(getProvider("keyless").apiKey).toBe("sk-secret");
+  });
+
+  it("preserves ${ENV_VAR} references in untouched fields", () => {
+    addProviderInstance({ name: "envref", kind: "openrouter", apiKey: "${OPENROUTER_API_KEY}", defaultModel: "claude" });
+    updateProviderInstance("envref", { defaultModel: "gpt-4o" });
+    // The apiKey reference must be preserved verbatim (not expanded to "").
+    expect(readConfig().providers[0]!.apiKey).toBe("${OPENROUTER_API_KEY}");
+    expect(readConfig().providers[0]!.defaultModel).toBe("gpt-4o");
+  });
+
+  it("clears a field when given an empty string", () => {
+    addProviderInstance({ name: "to-clear", kind: "ollama", apiKey: "k", defaultModel: "m" });
+    updateProviderInstance("to-clear", { apiKey: "", defaultModel: "" });
+    expect(readConfig().providers[0]!.apiKey).toBeUndefined();
+    expect(readConfig().providers[0]!.defaultModel).toBeUndefined();
+  });
+
+  it("sets the default flag", () => {
+    addProviderInstance({ name: "flag", kind: "ollama" });
+    updateProviderInstance("flag", { default: true });
+    expect(readConfig().providers[0]!.default).toBe(true);
+    updateProviderInstance("flag", { default: false });
+    expect(readConfig().providers[0]!.default).toBeUndefined();
+  });
+
+  it("creates a config entry for a built-in singleton that has none", () => {
+    // "openrouter" exists as a built-in (env-backed) but has no config entry.
+    process.env["OPENROUTER_API_KEY"] = "env-key";
+    _resetProviderCacheForTests();
+    expect(getRawProviderEntry("openrouter")).toBeUndefined();
+    // Now edit it — should create a config entry.
+    const stored = updateProviderInstance("openrouter", { defaultModel: "claude-sonnet-4" });
+    expect(stored.kind).toBe("openrouter");
+    expect(stored.defaultModel).toBe("claude-sonnet-4");
+    // The config entry now exists on disk.
+    expect(getRawProviderEntry("openrouter")).toBeDefined();
+    delete process.env["OPENROUTER_API_KEY"];
+  });
+
+  it("throws for a non-existent provider", () => {
+    expect(() => updateProviderInstance("ghost", { apiKey: "x" })).toThrow(/No provider instance/);
+  });
+
+  it("resets the in-process cache so getProvider reflects the change", () => {
+    addProviderInstance({ name: "cache", kind: "ollama", baseURL: "http://h:11434/v1" });
+    expect(getProvider("cache").apiKey).toBe("ollama"); // default dummy key
+    updateProviderInstance("cache", { apiKey: "real-key" });
+    expect(getProvider("cache").apiKey).toBe("real-key");
+  });
+
+  it("updates multiple fields in one call", () => {
+    addProviderInstance({ name: "multi", kind: "openrouter", baseURL: "old-url", apiKey: "old-key", defaultModel: "old-model" });
+    const stored = updateProviderInstance("multi", { baseURL: "new-url", apiKey: "new-key", defaultModel: "new-model", default: true });
+    expect(stored.baseURL).toBe("new-url");
+    expect(stored.apiKey).toBe("new-key");
+    expect(stored.defaultModel).toBe("new-model");
+    expect(stored.default).toBe(true);
   });
 });

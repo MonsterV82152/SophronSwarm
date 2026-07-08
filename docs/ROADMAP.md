@@ -4,7 +4,7 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-08):** 645/645 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-08):** 657/657 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
 > + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
 > (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer)
@@ -70,7 +70,7 @@ SophronSwarm (global)                          ← operator's home
 | **M7 — Global Orchestrator meta-layer** | ✅ Complete | the "CEO" agent above all projects (NO memory via `noMemory`); scoped tools (`list_projects`/`propose_project`/`init_project`); `GLOBAL_ORCHESTRATOR` template + installer; 26 tests |
 | **M8 — Wire Global Orchestrator into TUI Home** | ✅ Complete | real global-orchestrator chat in Home › Orchestrator; project-switch ghost-lines fix; `/clear` resets chat | 
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
-| **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
+| **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
 
 ---
 
@@ -330,8 +330,11 @@ an accidentally-created project.
 **Scope / delivered:**
 - **Provider management** — `sophron add-provider` (interactive menu OR
   `--name/--kind/--base-url/--api-key/--model/--default` flags) + `sophron
-  remove-provider <name>`. New `addProviderInstance`/`removeProviderInstance`
-  in `providers.ts` (read-modify-write, atomic, migrates legacy object form).
+  edit-provider <name>` (partial update — add/change a key or model without
+  re-adding; interactive pre-filled prompts OR flags like `--api-key` /
+  `--clear-key`) + `sophron remove-provider <name>`. New
+  `addProviderInstance`/`updateProviderInstance`/`removeProviderInstance` in
+  `providers.ts` (read-modify-write, atomic, migrates legacy object form).
   `${ENV_VAR}` references encouraged for secrets (expanded at load).
 - **Model-aware architect** — new `list_providers` global tool (read-only:
   lists configured instances + default models + tier guidance; optional
