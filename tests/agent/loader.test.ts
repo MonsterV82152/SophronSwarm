@@ -72,7 +72,26 @@ describe("agent loader", () => {
     const r = loadAgentFile({ source: "project", filePath: file });
     expect(r.ok).toBe(true);
   });
-});
+  it("parses the noMemory flag (M7 — global orchestrator)", () => {
+    const file = join(dir, "nomem.md");
+    writeFileSync(
+      file,
+      "---\nname: global-orchestrator\ndescription: CEO\nmodel: inherit\nnoMemory: true\n---\nYou are the CEO.",
+    );
+    const r = loadAgentFile({ source: "project", filePath: file });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.agent.noMemory).toBe(true);
+  });
+
+  it("defaults noMemory to undefined when not set", () => {
+    const file = join(dir, "echo-bot.md");
+    writeFileSync(file, VALID_AGENT);
+    const r = loadAgentFile({ source: "project", filePath: file });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.agent.noMemory).toBeUndefined();
+  });});
 
 describe("agent registry", () => {
   let dir: string;

@@ -4,10 +4,11 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-07):** 597/597 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-07):** 623/623 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
 > + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
-> (`propose_roster` batch bootstrap) complete.
+> (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer)
+> complete.
 >
 > **Last updated:** 2026-07-07
 
@@ -66,7 +67,7 @@ SophronSwarm (global)                          ← operator's home
 | **M4 — Context-aware `/help`** | ✅ Complete | `helpForView(view)` over M3's 11 views; core + per-view sections; 21 tests |
 | **M5 — `sophron init` Templates** | ✅ Complete | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates; seeds standardized per-project orchestrator + global architect; 25 tests |
 | **M6 — `propose_roster`** | ✅ Complete | batch draft→approve→close (transactional `writeRoster`); `sophron agents --drafts/--approve*/--reject*`; 50 tests |
-| **M7 — Global Orchestrator meta-layer** | 🔬 | the "CEO" agent above all projects (no memory) |
+| **M7 — Global Orchestrator meta-layer** | ✅ Complete | the "CEO" agent above all projects (NO memory via `noMemory`); scoped tools (`list_projects`/`propose_project`/`init_project`); `GLOBAL_ORCHESTRATOR` template + installer; 26 tests |
 | **M8 — Wire Global Orchestrator into TUI Home** | 🔬 | replaces the M3 Orchestrator tab stub with real chat |
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
 
@@ -241,35 +242,49 @@ bootstrapped either from a template (M5) or from scratch via the architect
 
 ---
 
-### M7 — Global Orchestrator + Multi-Project Meta-Layer 🔬
+### M7 — Global Orchestrator + Multi-Project Meta-Layer ✅
 **Why here:** the new meta-layer — one agent above all projects that the
 operator talks to from Home. Depends on M5 (templates) and M6 (roster), since
 project creation delegates to the architect (M6) and scaffolds via the template
 machinery (M5).
 
-**Scope:**
-- **Global orchestrator agent** at `~/.sophron/agents/global-orchestrator.md`
-  (distinct from the per-project orchestrator seeded by M5).
-- **No memory.** The loader is configured to skip memory injection for this
-  agent — no per-agent `MEMORY.md`, no shared-memory injection. Its only input
-  beyond the chat thread is the **project registry** (`list_projects`). It is a
-  pure project-lifecycle manager and must not inherit or interfere with any
-  project's memory.
-- **Scoped tool set:** `delegate` (to the global architect), `list_projects`,
-  `propose_project` (drafts a project proposal: name, path, template,
-  summary), `init_project` (controlled scaffolding after approval), and
-  read-only `read_file` / `list_dir` over `~/.sophron/`. **No** `run_command`
-  / `apply_patch` — no codebase workspace.
-- **Project-creation flow:** operator proposes an idea → global orchestrator
-  delegates to the global architect → architect drafts the roster via M6
-  `propose_roster` → operator approves → `init_project` scaffolds the project
-  at `~/sophron_workspace/<name>` + seeds the standardized per-project
-  orchestrator → registered in `projects.json`.
-- **Global architect:** a single `architect.md` (installed by M5) at user scope
-  that drafts rosters for any new project.
+**Built (2026-07-07):** the global orchestrator is a real, loadable agent at
+`~/.sophron/agents/global-orchestrator.md` — the operator's "CEO" for the whole
+workspace. It manages the **project lifecycle** (propose / create / list) with
+**NO memory** and **NO codebase workspace**.
+- **No-memory mechanism (`noMemory: true` frontmatter, M7):** `AgentDefinition`
+  + the zod loader gained a `noMemory?: boolean` field. When true, the agent
+  loop (`src/agent/loop.ts`) skips BOTH shared-memory AND per-agent memory
+  injection — the global orchestrator's prompt is pure system-prompt + chat
+  thread + `list_projects` output. This prevents any cross-project memory
+  interference (locked decision).
+- **Scoped global tools (`src/tools/builtin/global.ts`, NEW):**
+  - `list_projects` — read-only view of `~/.sophron/projects.json`.
+  - `propose_project` — drafts a structured proposal (name, path, template,
+    summary) for the operator. **Does NOT create anything** — validates the
+    name (lowercase-hyphenated) + template + checks for duplicates; returns a
+    draft for review. There is no auto-creation path.
+  - `init_project` — controlled scaffolding after approval. Calls M5's
+    `scaffoldProject`; refuses to clobber an existing `agents/` dir; path-
+    traversal-guarded (all paths coerced under `~/sophron_workspace/`).
+- **`GLOBAL_ORCHESTRATOR` template (`src/init/templates.ts`, NEW const):** the
+  agent definition. `tools:` = the scoped set + `delegate` (to architect) +
+  read-only fs; `delegateAllowlist: [architect]`; `noMemory: true`; **no**
+  `run_command` / `apply_patch`. `installGlobalOrchestrator()` writes it to
+  `~/.sophron/agents/global-orchestrator.md` (idempotent, like the architect).
+- **CLI:** `sophron init --install-orchestrator` installs/updates it.
+- **Wired into `BUILTIN_TOOLS`** so the global orchestrator's allowlist resolves
+  the new tools; other agents don't list them.
+- **Project-creation flow (now end-to-end capable):** operator proposes an idea →
+  global orchestrator `propose_project` (draft) → optionally `delegate` to
+  architect for a custom roster (M6 `propose_roster`) → operator approves →
+  `init_project` scaffolds + seeds the standardized orchestrator + registers.
+- 26 new tests (loader `noMemory` ×2 + global tools ×15 + template/installer ×9).
+  623/623 total.
 
 **Delivers:** the operator can propose and spin up whole projects from a chat;
-the meta-layer is the "CEO" of the org.
+the meta-layer is the "CEO" of the org. The runtime machinery is complete —
+M8 wires it into the TUI Home chat.
 
 ---
 
@@ -306,9 +321,9 @@ when the CLI vision (M3–M8) is stable.
 M1 ✅ (purifier)  ─┐
 M2 ✅ (providers)  ─┴─ done
 
-M5 ✅ (templates) ─► M6 ✅ (propose_roster) ─► M7 (global orchestrator) ──┐
-                                                                          ├─► M8 (wire into Home)
-M3 ✅ (TUI shell rewrite) ─► M4 ✅ (/help)                                 ┘
+M5 ✅ (templates) ─► M6 ✅ (propose_roster) ─► M7 ✅ (global orchestrator) ──┐
+                                                                            ├─► M8 (wire into Home)
+M3 ✅ (TUI shell rewrite) ─► M4 ✅ (/help)                                  ┘
 
 M9 (web UI) ── optional / parallel / deferred
 ```
@@ -316,13 +331,13 @@ M9 (web UI) ── optional / parallel / deferred
 - **M5 / M3** are both unblocked now and **independent** of each other — they
   can be built in parallel.
 - **M4** depends on **M3** (its view set).
-- **M6** depends on **M5** (done); **M7** depends on **M5 + M6** (both done —
-  unblocked); **M8** depends on **M3 + M7**.
+- **M6** depends on **M5** (done); **M7** depends on **M5 + M6** (done);
+  **M8** depends on **M3 + M7** (both done — UNBLOCKED).
 
 ## Starting point
 
-M3 + M4 + M5 + M6 are ✅ complete (597/597 tests). **M7 (global orchestrator
-meta-layer)** is the next build — the "CEO" agent above all projects that
-delegates to the global architect (which uses M6's `propose_roster` to draft a
-new project's roster). Then **M8 (wire into Home)** replaces the M3
-Orchestrator-tab stub with the real chat + project-proposal flow.
+M3 + M4 + M5 + M6 + M7 are ✅ complete (623/623 tests). **M8 (wire global
+orchestrator into TUI Home)** is the next build — it replaces the M3
+Orchestrator-tab stub with the real global-orchestrator chat + the
+project-proposal flow (the M7 `propose_project` → `init_project` chain behind
+the chat). M8 is the last build before the core CLI vision (M3–M8) is complete.

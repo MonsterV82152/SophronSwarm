@@ -87,9 +87,14 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // Shared memory: always injected (project context). Per-agent memory: the
   // agent's own recorded lessons (first ~200 lines), injected unless the agent
   // explicitly opts out of per-agent scope.
-  const sharedMemory = services.sharedMemoryStore.toInjectionMap();
+  // ── M7: agents with `noMemory: true` (the global orchestrator) get NEITHER.
+  //    They are pure project-lifecycle managers with no project memory — must
+  //    not inherit or interfere with any project's shared context.
+  const noMemory = agent.noMemory === true;
+  const sharedMemory = noMemory ? new Map() : services.sharedMemoryStore.toInjectionMap();
   const allowPerAgent =
-    !agent.memoryScopes || agent.memoryScopes.length === 0 || agent.memoryScopes.includes("per-agent");
+    !noMemory &&
+    (!agent.memoryScopes || agent.memoryScopes.length === 0 || agent.memoryScopes.includes("per-agent"));
   const agentMemory = allowPerAgent ? services.agentMemoryStore.readForInjection(agent.name) : "";
 
   const promptBuilder = new PromptBuilder();

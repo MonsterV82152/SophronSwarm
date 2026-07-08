@@ -28,6 +28,8 @@ const FrontmatterSchema = z.object({
   permissionMode: z.enum(PERMISSION_MODES).default("default"),
   mcpServers: z.array(z.union([z.string(), z.record(z.unknown())])).optional(),
   memoryScopes: z.array(z.enum(["per-agent", "shared", "task"])).optional(),
+  /** Disable ALL memory injection for this agent (M7 — global orchestrator). */
+  noMemory: z.boolean().optional(),
   delegateAllowlist: z.array(z.string()).optional(),
   maxTurns: z.number().int().positive().optional(),
   outputPurifier: z.enum(["default", "aggressive", "off"]).optional(),
@@ -110,6 +112,7 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
     permissionMode: fm.permissionMode as PermissionMode,
     mcpServers: fm.mcpServers,
     memoryScopes: fm.memoryScopes,
+    noMemory: fm.noMemory,
     delegateAllowlist: fm.delegateAllowlist,
     maxTurns: fm.maxTurns,
     outputPurifier: fm.outputPurifier,

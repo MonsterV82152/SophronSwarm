@@ -47,6 +47,10 @@ export interface AgentDefinition {
   mcpServers?: (string | Record<string, unknown>)[];
   /** Memory scopes this agent may read/write (Phase 3). */
   memoryScopes?: ("per-agent" | "shared" | "task")[];
+  /** Disable ALL memory injection for this agent (M7). When true, neither
+   *  per-agent nor shared memory is loaded into the prompt. Used by the global
+   *  orchestrator (a pure project-lifecycle manager with no project memory). */
+  noMemory?: boolean;
   /** Which agent types this agent may spawn via `delegate` (Phase 2). */
   delegateAllowlist?: string[];
   /** Hard cap on loop iterations. Falls back to DEFAULT_MAX_TURNS. */

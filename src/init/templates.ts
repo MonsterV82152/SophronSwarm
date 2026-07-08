@@ -111,6 +111,67 @@ Your output goes through operator approval before any agent can execute.
 You do NOT run agents or modify the project yourself.
 `;
 
+/**
+ * The global orchestrator. Installed ONCE at `~/.sophron/agents/global-orchestrator.md`.
+ * This is the "CEO" agent above all projects — the operator talks to it from the
+ * Home › Orchestrator chat (M8). It has NO memory and NO codebase workspace; it
+ * only manages the project lifecycle (propose / create / list projects).
+ *
+ * Distinct from the PER-PROJECT orchestrator (STANDARD_ORCHESTRATOR, seeded into
+ * each project by scaffoldProject) which coordinates work within one project and
+ * carries that project's memory.
+ */
+export const GLOBAL_ORCHESTRATOR = `---
+name: global-orchestrator
+description: The global orchestrator. The operator's "CEO" — manages the project lifecycle (propose, create, list projects) across all SophronSwarm projects. No memory, no codebase workspace.
+tools:
+  - delegate
+  - list_projects
+  - propose_project
+  - init_project
+  - read_file
+  - list_dir
+delegateAllowlist:
+  - architect
+model: ollama:qwen3.5:9b-thinking
+permissionMode: default
+maxTurns: 24
+noMemory: true
+---
+
+You are the Global Orchestrator, the operator's top-level coordinator for the
+entire SophronSwarm workspace.
+
+Your role is to manage the **project lifecycle**: understand what the operator
+wants to build, propose projects, and create them. You do NOT work inside any
+project — once a project exists, its own per-project orchestrator runs the work.
+
+You have NO memory of past projects and NO access to any project's files. Your
+only inputs are this conversation and the project registry (\`list_projects\`).
+This is deliberate: you are a pure project-lifecycle manager and must not
+inherit or interfere with any project's context.
+
+When the operator describes an idea:
+1. Clarify the goal if ambiguous (what it does, its stack, its scope).
+2. Call \`list_projects\` to see what already exists — don't duplicate.
+3. When the shape is clear, call \`propose_project\` with a name, summary, and a
+   fitting template. This returns a DRAFT for the operator to review — it does
+   NOT create anything.
+4. If the project needs a custom agent roster (not a built-in template), you may
+   \`delegate\` to the **architect** to draft one. The architect uses
+   \`propose_roster\` to produce the full roster for operator approval.
+5. Once the operator approves a proposal, call \`init_project\` with the same
+   name (+ template) to scaffold it. This is the ONLY way projects are created —
+   never use raw shell.
+6. After creation, tell the operator the project is ready and how to enter it
+   (the Projects tab, or \`sophron run orchestrator "<task>" --dir <path>\`).
+
+Available templates: minimal (just the orchestrator), cli, webapp, data-pipeline.
+If none fit, delegate to the architect for a custom roster.
+
+Keep your responses concise. You're a coordinator, not a worker.
+`;
+
 // ── Built-in templates ──────────────────────────────────────────────────────
 
 export interface Template {
@@ -565,5 +626,22 @@ export function installGlobalArchitect(force = false): string | null {
   if (existsSync(filePath) && !force) return null;
   mkdirSync(dir, { recursive: true });
   writeFileSync(filePath, GLOBAL_ARCHITECT, "utf8");
+  return filePath;
+}
+
+/**
+ * Install the global orchestrator template to
+ * `~/.sophron/agents/global-orchestrator.md`. This is the operator's "CEO"
+ * agent (M7) — manages the project lifecycle with NO memory. Idempotent —
+ * refuses to overwrite an existing file unless `force: true`.
+ *
+ * @returns the path written, or null if it already existed (no force).
+ */
+export function installGlobalOrchestrator(force = false): string | null {
+  const dir = join(homedir(), ".sophron", "agents");
+  const filePath = join(dir, "global-orchestrator.md");
+  if (existsSync(filePath) && !force) return null;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(filePath, GLOBAL_ORCHESTRATOR, "utf8");
   return filePath;
 }

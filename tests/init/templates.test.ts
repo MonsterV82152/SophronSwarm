@@ -11,11 +11,13 @@ import { join } from "node:path";
 import {
   scaffoldProject,
   installGlobalArchitect,
+  installGlobalOrchestrator,
   listTemplates,
   getTemplate,
   BUILTIN_TEMPLATES,
   STANDARD_ORCHESTRATOR,
   GLOBAL_ARCHITECT,
+  GLOBAL_ORCHESTRATOR,
   userTemplatesDir,
 } from "../../src/init/templates.js";
 
@@ -204,7 +206,7 @@ describe("installGlobalArchitect", () => {
   });
 });
 
-describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT", () => {
+describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () => {
   it("orchestrator is the per-project coordinator (delegates)", () => {
     expect(STANDARD_ORCHESTRATOR).toContain("orchestrator");
     expect(STANDARD_ORCHESTRATOR).toContain("delegate");
@@ -215,5 +217,52 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT", () => {
     expect(GLOBAL_ARCHITECT).toContain("architect");
     expect(GLOBAL_ARCHITECT).toContain("roster");
     expect(GLOBAL_ARCHITECT).toContain("plan"); // permissionMode: plan
+  });
+
+  it("global orchestrator is the no-memory CEO (M7)", () => {
+    expect(GLOBAL_ORCHESTRATOR).toContain("name: global-orchestrator");
+    expect(GLOBAL_ORCHESTRATOR).toContain("noMemory: true"); // CRITICAL: no memory injection
+    expect(GLOBAL_ORCHESTRATOR).toContain("list_projects");
+    expect(GLOBAL_ORCHESTRATOR).toContain("propose_project");
+    expect(GLOBAL_ORCHESTRATOR).toContain("init_project");
+    expect(GLOBAL_ORCHESTRATOR).toContain("delegate");
+    // The global orchestrator must NOT have run_command / apply_patch.
+    expect(GLOBAL_ORCHESTRATOR).not.toContain("run_command");
+    expect(GLOBAL_ORCHESTRATOR).not.toContain("apply_patch");
+    // It may only delegate to the architect.
+    expect(GLOBAL_ORCHESTRATOR).toContain("architect");
+  });
+});
+
+describe("installGlobalOrchestrator (M7)", () => {
+  it("writes the global orchestrator to ~/.sophron/agents/global-orchestrator.md", () => {
+    const result = installGlobalOrchestrator();
+    expect(result).toBeTruthy();
+    expect(existsSync(join(tempHome, ".sophron", "agents", "global-orchestrator.md"))).toBe(true);
+
+    const content = readFileSync(join(tempHome, ".sophron", "agents", "global-orchestrator.md"), "utf8");
+    expect(content).toBe(GLOBAL_ORCHESTRATOR);
+    expect(content).toContain("name: global-orchestrator");
+    expect(content).toContain("noMemory: true");
+  });
+
+  it("returns null without overwriting if it already exists (no force)", () => {
+    installGlobalOrchestrator();
+    const second = installGlobalOrchestrator();
+    expect(second).toBeNull();
+  });
+
+  it("overwrites with force=true", () => {
+    installGlobalOrchestrator();
+    const second = installGlobalOrchestrator(true);
+    expect(second).toBeTruthy();
+  });
+
+  it("the global orchestrator + architect can coexist (distinct names)", () => {
+    const orch = installGlobalOrchestrator();
+    const arch = installGlobalArchitect();
+    expect(orch).toBeTruthy();
+    expect(arch).toBeTruthy();
+    expect(orch).not.toBe(arch);
   });
 });

@@ -22,7 +22,7 @@ import { AgentRegistry } from "./agent/registry.js";
 import { AgentDraftStore } from "./agent/drafts.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject } from "./project/registry.js";
-import { scaffoldProject, installGlobalArchitect, listTemplates } from "./init/templates.js";
+import { scaffoldProject, installGlobalArchitect, installGlobalOrchestrator, listTemplates } from "./init/templates.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
 export async function runCli(argv: string[]): Promise<void> {
@@ -305,7 +305,8 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("-f, --force", "overwrite an existing agents/ directory")
     .option("--list", "list available templates and exit")
     .option("--install-architect", "install/update the global architect template at ~/.sophron/agents/architect.md")
-    .action((opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installArchitect?: boolean }) => {
+    .option("--install-orchestrator", "install/update the global orchestrator template at ~/.sophron/agents/global-orchestrator.md (M7)")
+    .action((opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installArchitect?: boolean; installOrchestrator?: boolean }) => {
       // ── --list: print templates + exit ──
       if (opts.list) {
         const templates = listTemplates();
@@ -324,6 +325,17 @@ export async function runCli(argv: string[]): Promise<void> {
           console.log(chalk.green(`✓ Installed global architect → ${written}`));
         } else {
           console.log(chalk.yellow("Global architect already exists (use --force to overwrite)."));
+        }
+        return;
+      }
+
+      // ── --install-orchestrator: write the global orchestrator + exit (M7) ──
+      if (opts.installOrchestrator) {
+        const written = installGlobalOrchestrator(opts.force);
+        if (written) {
+          console.log(chalk.green(`✓ Installed global orchestrator → ${written}`));
+        } else {
+          console.log(chalk.yellow("Global orchestrator already exists (use --force to overwrite)."));
         }
         return;
       }

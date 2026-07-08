@@ -63,9 +63,9 @@ V3/
 │   ├── cli.ts               # commander subcommands: run / agents / replay
 │   ├── types.ts             # Core types (AgentDefinition, AgentRunState, LLMMessage, ToolCall/Result, Usage, DelegationContext, HandoffPacket)
 │   ├── agent/
-│   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; resolves model tier ONCE at load
+│   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; resolves model tier ONCE at load; noMemory flag (M7)
 │   │   ├── registry.ts      # indexed collection + chokidar hot-reload + 12-agent soft cap
-│   │   ├── loop.ts          # THE AGENTIC LOOP (the heart) — pulls memory from services into prompt
+│   │   ├── loop.ts          # THE AGENTIC LOOP (the heart) — pulls memory from services into prompt; skips memory when agent.noMemory (M7)
 │   │   ├── delegation.ts    # checkPolicy (depth+cycle+allowlist), buildChildCtx, buildHandoffPacket, formatHandoffPacket
 │   │   ├── autoGate.ts      # LlmAutoModeClassifier (cheap model vets commands) + AutoPermissionGate (Phase 6)
 │   │   ├── drafts.ts        # AgentDraftStore — draft→approve ledger (Phase 6) + transactional batch roster (M6: writeRoster/approveMany/approveAll)
@@ -113,6 +113,7 @@ V3/
 │   │       ├── mcp_tool_search.ts     # lazy MCP meta-tool: search→promote (Phase 4)
 │   │       ├── propose_agent.ts       # Architect drafts a SINGLE agent for operator approval (Phase 6)
 │   │       ├── propose_roster.ts      # M6: Architect drafts the FULL roster in one pass (one approval gate)
+│   │       ├── global.ts              # M7: global-orchestrator tools — list_projects / propose_project / init_project (scoped to ~/.sophron + ~/sophron_workspace)
 │   │       └── read_raw_output.ts     # M1 escape hatch: retrieve full raw tool output
 │   ├── sandbox/
 │   │   ├── backend.ts             # ExecutionBackend interface + getBackend() factory

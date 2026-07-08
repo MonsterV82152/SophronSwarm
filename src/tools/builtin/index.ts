@@ -1,7 +1,8 @@
 /**
  * Built-in tools: echo, read_file, write_file, list_dir, run_command,
  * apply_patch, delegate, remember, advance_checkpoint, mcp_tool_search, propose_agent,
- * propose_roster (M6 — batch roster draft), read_raw_output.
+ * propose_roster (M6 — batch roster draft), read_raw_output, + GLOBAL_TOOLS
+ * (M7: list_projects, propose_project, init_project — global orchestrator only).
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
 import { dirname, relative, join } from "node:path";
@@ -15,6 +16,7 @@ import { advance_checkpoint } from "./advance_checkpoint.js";
 import { mcp_tool_search } from "./mcp_tool_search.js";
 import { propose_agent } from "./propose_agent.js";
 import { propose_roster } from "./propose_roster.js";
+import { GLOBAL_TOOLS } from "./global.js";
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
@@ -129,4 +131,4 @@ export const read_raw_output: ToolSpec = {
   },
 };
 
-export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint, mcp_tool_search, propose_agent, propose_roster, read_raw_output];
+export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint, mcp_tool_search, propose_agent, propose_roster, read_raw_output, ...GLOBAL_TOOLS];
