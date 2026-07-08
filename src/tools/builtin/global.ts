@@ -24,6 +24,7 @@ import { homedir } from "node:os";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { listProjects, findByName, type ProjectEntry } from "../../project/registry.js";
 import { scaffoldProject, listTemplates, getTemplate } from "../../init/templates.js";
+import { listProviders } from "../../llm/providers.js";
 import type { ToolSpec } from "../schema.js";
 
 /** The canonical workspace root for all SophronSwarm projects. */
@@ -201,4 +202,72 @@ export const init_project: ToolSpec = {
   },
 };
 
-export const GLOBAL_TOOLS: ToolSpec[] = [list_projects, propose_project, init_project];
+// ── list_providers ──────────────────────────────────────────────────────────
+
+/**
+ * List configured LLM provider instances + their default models. This is the
+ * read-only way for the architect (and any agent) to discover WHICH providers
+ * and models are actually available before assigning a `model` to a drafted
+ * agent. Optionally probes one provider's `/v1/models` (network) to enumerate
+ * every model id it serves.
+ *
+ * This is what makes the architect model-aware: it can see the concrete
+ * providers/models instead of guessing. See docs/ROADMAP.md (M10).
+ */
+export const list_providers: ToolSpec = {
+  name: "list_providers",
+  description:
+    "List the configured LLM provider instances and their default models, so you can pick a concrete " +
+    "model that actually exists. Use this BEFORE assigning a 'model' field to a drafted agent. " +
+    "Set 'probe' to a provider name to also enumerate every model id it serves (network call).",
+  parameters: {
+    type: "object",
+    properties: {
+      probe: {
+        type: "string",
+        description: "Optional provider instance name to probe for its full model list (GET /v1/models). Omit to just list configured instances.",
+      },
+    },
+    required: [],
+  },
+  handler: async ({ args }) => {
+    const probe = typeof args["probe"] === "string" ? (args["probe"] as string).trim() : "";
+    const providers = listProviders();
+    const lines: string[] = [`Configured provider instances (${providers.length}):`];
+    for (const p of providers) {
+      const creds = p.apiKey ? "key set" : p.kind === "ollama" ? "(no key needed)" : "NO KEY";
+      const model = p.defaultModel ?? "(no default model)";
+      lines.push(`- ${p.name} [${p.kind}]  ${p.baseURL}  ${creds}  default: ${model}`);
+    }
+    lines.push("");
+    lines.push(
+      "Model field guidance for drafted agents:",
+      "  - Use a NAMED TIER to stay portable: 'cheap' (small/routine), 'mid' (general),",
+      "    'frontier' (hardest reasoning), 'inherit' (use the orchestrator's model).",
+      "  - Or a CONCRETE id with a provider prefix: 'ollama:qwen3.5:9b', 'zai:glm-4.6',",
+      "    'openrouter:anthropic/claude-sonnet-4'.",
+      "  - Match the model to the TASK SIZE: cheap for routine/build/test, mid for",
+      "    general features, frontier only for hard design/security work.",
+    );
+
+    if (probe) {
+      lines.push("", `Probing '${probe}' (GET /v1/models) …`);
+      try {
+        const { LLMClient } = await import("../../llm/client.js");
+        const llm = new LLMClient();
+        const models = await llm.listModels(probe);
+        if (models.length === 0) {
+          lines.push(`  (reachable, but returned 0 models)`);
+        } else {
+          lines.push(`  ${models.length} model(s): ${models.slice(0, 40).map((m) => m.id).join(", ")}${models.length > 40 ? ", …" : ""}`);
+        }
+      } catch (e) {
+        lines.push(`  ✗ unreachable — ${(e as Error).message}`);
+      }
+    }
+
+    return lines.join("\n");
+  },
+};
+
+export const GLOBAL_TOOLS: ToolSpec[] = [list_projects, propose_project, init_project, list_providers];

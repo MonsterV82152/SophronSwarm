@@ -17,14 +17,15 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
-import { listProviders, getProvider } from "./llm/providers.js";
+import { listProviders, getProvider, addProviderInstance, removeProviderInstance, configPath, type ProviderKind } from "./llm/providers.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { AgentDraftStore } from "./agent/drafts.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
-import { registerProject } from "./project/registry.js";
+import { registerProject, removeProject, renameProject, togglePin, listProjects, findByName } from "./project/registry.js";
 import { scaffoldProject, installGlobalArchitect, installGlobalOrchestrator, listTemplates } from "./init/templates.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
+import { prompt, promptSelect, promptConfirm, promptSecret } from "./util/prompts.js";
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
 
@@ -294,6 +295,220 @@ export async function runCli(argv: string[]): Promise<void> {
         console.log(chalk.red(`✗ unreachable`) + chalk.gray(` — ${(e as Error).message}`));
         process.exitCode = 1;
       }
+    });
+
+  program
+    .command("add-provider")
+    .description("Interactively add a named LLM provider instance (writes ~/.sophron/config.json)")
+    .option("-n, --name <name>", "instance name (e.g. ollama-laptop)")
+    .option("-k, --kind <kind>", "endpoint type: openrouter | ollama | zai | openai-compat")
+    .option("--base-url <url>", "OpenAI-compatible base URL")
+    .option("--api-key <key>", "API key (or a ${ENV_VAR} reference)")
+    .option("-m, --model <id>", "default model id")
+    .option("--default", "mark this instance as the default for its kind")
+    .option("--replace", "overwrite an existing instance with the same name")
+    .action(async (opts: {
+      name?: string;
+      kind?: string;
+      baseUrl?: string;
+      apiKey?: string;
+      model?: string;
+      default?: boolean;
+      replace?: boolean;
+    }) => {
+      const KINDS = ["openrouter", "ollama", "zai", "openai-compat"] as const;
+      const kindLabels: Record<string, string> = {
+        "openrouter": "OpenRouter (cloud router for many models)",
+        "ollama": "Ollama (local, no API key needed)",
+        "zai": "z.ai (GLM models)",
+        "openai-compat": "Generic OpenAI-compatible (vLLM, LM Studio, LocalAI, …)",
+      };
+      const kindDefaultUrl: Record<ProviderKind, string | undefined> = {
+        openrouter: "https://openrouter.ai/api/v1",
+        ollama: "http://localhost:11434/v1",
+        zai: "https://api.z.ai/api/coding/paas/v4",
+        "openai-compat": undefined,
+      };
+
+      // Non-interactive when both essentials are given via flags OR stdin isn't
+      // a TTY (piped). In that mode we use provided flags + sensible defaults
+      // and never block on a prompt.
+      const nonInteractive = Boolean(opts.name && opts.kind) || !process.stdin.isTTY;
+
+      // ── Resolve each field (flag → prompt → default) ───────────────────
+      const name = opts.name ?? (nonInteractive ? "" : await prompt("Provider instance name", { required: true }));
+      if (!name) {
+        console.error(chalk.red("--name is required (or run interactively without flags)."));
+        process.exitCode = 1;
+        return;
+      }
+
+      let kind: ProviderKind;
+      if (opts.kind) {
+        if (!KINDS.includes(opts.kind as (typeof KINDS)[number])) {
+          console.error(chalk.red(`Invalid --kind '${opts.kind}'. Choose from: ${KINDS.join(", ")}`));
+          process.exitCode = 1;
+          return;
+        }
+        kind = opts.kind as ProviderKind;
+      } else if (nonInteractive) {
+        kind = "ollama";
+      } else {
+        kind = await promptSelect("Endpoint type (kind)", KINDS, { default: "ollama", labels: kindLabels });
+      }
+
+      const baseURL = opts.baseUrl ??
+        (nonInteractive ? kindDefaultUrl[kind] : await prompt("Base URL", { default: kindDefaultUrl[kind], required: kind === "openai-compat" }));
+
+      // API key: encourage a ${ENV_VAR} reference so the secret stays out of the file.
+      let apiKey: string | undefined = opts.apiKey;
+      if (apiKey === undefined && kind !== "ollama") {
+        if (!nonInteractive) {
+          console.log(chalk.gray("  Tip: enter a ${ENV_VAR} reference (e.g. ${OPENROUTER_API_KEY}) to keep the secret out of the config file; it's expanded at load time."));
+          const k = await promptSecret("API key (or ${ENV_VAR} reference)");
+          apiKey = k ?? undefined;
+        }
+        // In non-interactive mode, leave the key unset (load-time env defaults apply).
+      }
+
+      const defaultModel = opts.model ??
+        (nonInteractive ? undefined : (await prompt("Default model id (optional, e.g. qwen3.5:9b)")) || undefined);
+
+      const markDefault = opts.default ?? (nonInteractive ? false : await promptConfirm("Mark as the default instance for this kind?", false));
+
+      // ── Write it ───────────────────────────────────────────────────────
+      try {
+        const stored = addProviderInstance(
+          { name, kind, baseURL: baseURL || undefined, apiKey, defaultModel, default: markDefault },
+          { replace: opts.replace },
+        );
+        console.log(chalk.green(`✓ Added provider '${stored.name}' (${stored.kind}) → ${configPath()}`));
+        const creds = apiKey ? chalk.green("key set") : chalk.gray("no key");
+        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${creds}  ${stored.defaultModel ?? "(no default model)"}`));
+        console.log(chalk.gray(`  Test it with: sophron providers ${stored.name}`));
+      } catch (e) {
+        console.error(chalk.red(`Could not add provider: ${(e as Error).message}`));
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command("remove-provider <name>")
+    .description("Remove a named provider instance from ~/.sophron/config.json")
+    .action((name: string) => {
+      const removed = removeProviderInstance(name);
+      if (removed) {
+        console.log(chalk.green(`✓ Removed provider '${name}' from ${configPath()}`));
+      } else {
+        console.error(chalk.yellow(`No provider instance named '${name}' in ${configPath()}.`));
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command("projects")
+    .description("List and manage registered SophronSwarm projects (remove / rename / pin)")
+    .argument("[action]", "list (default) | remove | rename | pin | unpin")
+    .argument("[name]", "project name (or path for remove)")
+    .argument("[newName]", "new alias (for 'rename')")
+    .option("-y, --yes", "skip the confirmation prompt for remove")
+    .action(async (action: string | undefined, name: string | undefined, newName: string | undefined, opts: { yes?: boolean }) => {
+      const act = action ?? "list";
+
+      // ── list ──────────────────────────────────────────────────────────
+      if (act === "list") {
+        const projects = listProjects();
+        if (projects.length === 0) {
+          console.log(chalk.gray("No projects registered. Use 'sophron init' to create one."));
+          return;
+        }
+        for (const p of projects) {
+          const pin = p.pinned ? chalk.magenta(" ★") : "";
+          console.log(`${chalk.bold(p.name)}${pin}  ${chalk.gray(p.path)}`);
+        }
+        console.log(chalk.gray(`\n${projects.length} project(s). Remove with: sophron projects remove <name>`));
+        return;
+      }
+
+      // All other actions need a name.
+      if (!name) {
+        console.error(chalk.red(`'sophron projects ${act}' needs a project name.`));
+        process.exitCode = 1;
+        return;
+      }
+
+      // ── remove (accepts a name OR a path) ─────────────────────────────
+      if (act === "remove") {
+        // Resolve name → path if needed.
+        let targetPath = name;
+        const byName = findByName(name);
+        if (byName) targetPath = byName.path;
+        // If the arg was a path and it's registered, remove by path.
+        const entry = listProjects().find((p) => p.path === name || p.name === name);
+        if (!entry) {
+          console.error(chalk.yellow(`No registered project matching '${name}'.`));
+          process.exitCode = 1;
+          return;
+        }
+        const confirm = opts.yes ?? (await promptConfirm(`Remove '${entry.name}' (${entry.path}) from the registry? This does NOT delete the files on disk.`, false));
+        if (!confirm) {
+          console.log(chalk.gray("Cancelled."));
+          return;
+        }
+        const ok = removeProject(entry.path);
+        if (ok) {
+          console.log(chalk.green(`✓ Removed '${entry.name}' from the registry.`));
+          console.log(chalk.gray(`  The files at ${entry.path} were NOT deleted. Delete them manually if no longer needed.`));
+        } else {
+          console.error(chalk.red(`Could not remove '${entry.name}'.`));
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      // ── rename ────────────────────────────────────────────────────────
+      if (act === "rename") {
+        if (!newName) {
+          console.error(chalk.red("'sophron projects rename' needs <name> <newName>."));
+          process.exitCode = 1;
+          return;
+        }
+        const entry = findByName(name);
+        if (!entry) {
+          console.error(chalk.yellow(`No registered project named '${name}'.`));
+          process.exitCode = 1;
+          return;
+        }
+        try {
+          const updated = renameProject(entry.path, newName);
+          console.log(chalk.green(`✓ Renamed '${name}' → '${updated.name}'.`));
+        } catch (e) {
+          console.error(chalk.red(`Could not rename: ${(e as Error).message}`));
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      // ── pin / unpin ───────────────────────────────────────────────────
+      if (act === "pin" || act === "unpin") {
+        const entry = findByName(name);
+        if (!entry) {
+          console.error(chalk.yellow(`No registered project named '${name}'.`));
+          process.exitCode = 1;
+          return;
+        }
+        const want = act === "pin";
+        if ((entry.pinned ?? false) === want) {
+          console.log(chalk.gray(`'${entry.name}' is already ${want ? "pinned" : "not pinned"}.`));
+          return;
+        }
+        const updated = togglePin(entry.path);
+        console.log(chalk.green(`✓ '${updated!.name}' is now ${updated!.pinned ? "pinned ★" : "unpinned"}.`));
+        return;
+      }
+
+      console.error(chalk.red(`Unknown action '${act}'. Use: list | remove | rename | pin | unpin`));
+      process.exitCode = 1;
     });
 
   program

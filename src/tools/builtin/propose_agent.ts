@@ -37,7 +37,7 @@ export const propose_agent: ToolSpec = {
       description: { type: "string", description: "One-line description of when to delegate to this agent." },
       systemPrompt: { type: "string", description: "The agent's system prompt (markdown body)." },
       tools: { type: "array", items: { type: "string" }, description: "Tool allowlist." },
-      model: { type: "string", description: "Model tier (inherit/frontier/mid/cheap) or concrete id." },
+      model: { type: "string", description: "Model tier (cheap=small/routine, mid=general, frontier=hardest reasoning, inherit) or a concrete prefixed id like 'ollama:qwen3.5:9b'. Match the model to the task size — use 'cheap' for narrow/mechanical work and reserve 'frontier' for hard reasoning. Call list_providers first to see what is configured." },
       permissionMode: {
         type: "string",
         enum: ["default", "accept-edits", "auto", "plan", "full-auto"],

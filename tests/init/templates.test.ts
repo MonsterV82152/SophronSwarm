@@ -219,6 +219,22 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     expect(GLOBAL_ARCHITECT).toContain("plan"); // permissionMode: plan
   });
 
+  it("global architect can actually draft (has the roster tools + model discovery)", () => {
+    // CRITICAL: the architect must list the tools it needs to draft rosters.
+    // Without these, the dispatcher's allowlist (agent.tools) blocks them and
+    // the architect can NEVER call propose_roster — a real bug fixed in M10.
+    expect(GLOBAL_ARCHITECT).toContain("propose_roster");
+    expect(GLOBAL_ARCHITECT).toContain("propose_agent");
+    expect(GLOBAL_ARCHITECT).toContain("list_providers");
+  });
+
+  it("global architect is model-aware (right-sizes models to task size)", () => {
+    expect(GLOBAL_ARCHITECT).toMatch(/cheap/i);
+    expect(GLOBAL_ARCHITECT).toMatch(/frontier/i);
+    expect(GLOBAL_ARCHITECT).toMatch(/list_providers/); // told to discover configured models
+    expect(GLOBAL_ARCHITECT).toMatch(/match the model to the task size/i);
+  });
+
   it("global orchestrator is the no-memory CEO (M7)", () => {
     expect(GLOBAL_ORCHESTRATOR).toContain("name: global-orchestrator");
     expect(GLOBAL_ORCHESTRATOR).toContain("noMemory: true"); // CRITICAL: no memory injection

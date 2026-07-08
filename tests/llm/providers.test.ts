@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +9,9 @@ import {
   defaultForKind,
   resolveModel,
   resolveModelWithProvider,
+  addProviderInstance,
+  removeProviderInstance,
+  configPath,
   _resetProviderCacheForTests,
   type ProviderConfig,
 } from "../../src/llm/providers.js";
@@ -320,5 +323,143 @@ describe("ProviderName type", () => {
     // If this compiles, ProviderName accepts arbitrary strings.
     const name: ProviderConfig["name"] = "my-custom-instance";
     expect(typeof name).toBe("string");
+  });
+});
+
+// ── addProviderInstance / removeProviderInstance (sophron add-provider) ──────
+
+describe("addProviderInstance", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "sophron-add-prov-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    _resetProviderCacheForTests();
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
+
+  function readConfigFile(): unknown {
+    const p = join(home, ".sophron", "config.json");
+    if (!existsSync(p)) return null;
+    return JSON.parse(readFileSync(p, "utf8"));
+  }
+
+  it("creates config.json when none exists", () => {
+    const stored = addProviderInstance({ name: "my-ollama", kind: "ollama", baseURL: "http://host:11434/v1", defaultModel: "qwen3.5:9b" });
+    expect(stored.name).toBe("my-ollama");
+    const cfg = readConfigFile() as { providers: { name: string; kind: string }[] };
+    expect(cfg.providers).toHaveLength(1);
+    expect(cfg.providers[0]!.name).toBe("my-ollama");
+  });
+
+  it("appends to an existing array without clobbering", () => {
+    const dir = join(home, ".sophron");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ providers: [{ name: "first", kind: "ollama" }] }));
+    addProviderInstance({ name: "second", kind: "openai-compat", baseURL: "http://x/v1", apiKey: "k" });
+    const cfg = readConfigFile() as { providers: { name: string }[] };
+    expect(cfg.providers.map((p) => p.name)).toEqual(["first", "second"]);
+  });
+
+  it("migrates the legacy object form to an array on write", () => {
+    const dir = join(home, ".sophron");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ providers: { ollama: { baseURL: "http://h:11434/v1" } } }));
+    addProviderInstance({ name: "extra", kind: "openai-compat", baseURL: "http://x/v1" });
+    const cfg = readConfigFile() as { providers: { name: string }[] };
+    const names = cfg.providers.map((p) => p.name);
+    expect(names).toContain("ollama"); // migrated
+    expect(names).toContain("extra"); // added
+    expect(Array.isArray(cfg.providers)).toBe(true);
+  });
+
+  it("refuses a duplicate name without replace", () => {
+    addProviderInstance({ name: "dup", kind: "ollama" });
+    expect(() => addProviderInstance({ name: "dup", kind: "ollama" })).toThrow(/already exists/);
+  });
+
+  it("overwrites a duplicate when replace is true", () => {
+    addProviderInstance({ name: "dup", kind: "ollama", defaultModel: "old" });
+    addProviderInstance({ name: "dup", kind: "ollama", defaultModel: "new" }, { replace: true });
+    const cfg = readConfigFile() as { providers: { name: string; defaultModel?: string }[] };
+    expect(cfg.providers).toHaveLength(1);
+    expect(cfg.providers[0]!.defaultModel).toBe("new");
+  });
+
+  it("validates the name format", () => {
+    expect(() => addProviderInstance({ name: "", kind: "ollama" })).toThrow(/required/i);
+    expect(() => addProviderInstance({ name: "bad name!", kind: "ollama" })).toThrow(/invalid/i);
+    expect(() => addProviderInstance({ name: "-leading", kind: "ollama" })).toThrow(/invalid/i);
+  });
+
+  it("drops empty optional fields so kind defaults apply at load", () => {
+    const stored = addProviderInstance({ name: "minimal", kind: "ollama" });
+    expect(stored).not.toHaveProperty("baseURL");
+    expect(stored).not.toHaveProperty("apiKey");
+    // And loading resolves it with the ollama default baseURL.
+    _resetProviderCacheForTests();
+    const got = getProvider("minimal");
+    expect(got.baseURL).toBe("http://localhost:11434/v1");
+  });
+
+  it("persists the default flag", () => {
+    addProviderInstance({ name: "primary", kind: "openrouter", apiKey: "k", default: true });
+    const cfg = readConfigFile() as { providers: { name: string; default?: boolean }[] };
+    expect(cfg.providers[0]!.default).toBe(true);
+  });
+
+  it("resets the in-process cache so listProviders reflects the write", () => {
+    const before = listProviders().map((p) => p.name);
+    expect(before).not.toContain("fresh-instance");
+    addProviderInstance({ name: "fresh-instance", kind: "ollama", baseURL: "http://h:11434/v1" });
+    const after = listProviders().map((p) => p.name);
+    expect(after).toContain("fresh-instance");
+  });
+
+  it("configPath resolves under the isolated HOME", () => {
+    expect(configPath()).toBe(join(home, ".sophron", "config.json"));
+  });
+});
+
+describe("removeProviderInstance", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "sophron-rm-prov-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    _resetProviderCacheForTests();
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
+
+  it("removes a named instance and returns true", () => {
+    addProviderInstance({ name: "to-remove", kind: "ollama" });
+    addProviderInstance({ name: "keep", kind: "ollama" });
+    expect(removeProviderInstance("to-remove")).toBe(true);
+    const cfg = JSON.parse(readFileSync(join(home, ".sophron", "config.json"), "utf8")) as { providers: { name: string }[] };
+    expect(cfg.providers.map((p) => p.name)).toEqual(["keep"]);
+  });
+
+  it("returns false when the instance is not found", () => {
+    expect(removeProviderInstance("never-existed")).toBe(false);
+  });
+
+  it("is a no-op when no config / legacy form exists", () => {
+    expect(removeProviderInstance("x")).toBe(false);
   });
 });

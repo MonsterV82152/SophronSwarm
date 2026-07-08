@@ -14,10 +14,12 @@ import {
   list_projects,
   propose_project,
   init_project,
+  list_providers,
   workspaceRoot,
   sophronRoot,
 } from "../../src/tools/builtin/global.js";
 import { registerProject, loadRegistry } from "../../src/project/registry.js";
+import { addProviderInstance, _resetProviderCacheForTests } from "../../src/llm/providers.js";
 
 let tempHome: string;
 let origHome: string | undefined;
@@ -36,6 +38,16 @@ afterEach(() => {
 /** Call a tool's handler with minimal args (global tools don't need state/services). */
 function call(tool: typeof list_projects, args: Record<string, unknown> = {}): string {
   return tool.handler({
+    args,
+    agent: {} as never,
+    state: { workingDir: tempHome } as never,
+    services: {} as never,
+  });
+}
+
+/** Call an async tool handler and await its result. */
+async function callAsync(tool: typeof list_providers, args: Record<string, unknown> = {}): Promise<string> {
+  return await tool.handler({
     args,
     agent: {} as never,
     state: { workingDir: tempHome } as never,
@@ -200,5 +212,42 @@ describe("init_project", () => {
     const out = call(init_project, { name: "ow", template: "cli", force: true });
     expect(out).toContain("Created project 'ow'");
     expect(existsSync(join(workspaceRoot(), "ow", "agents", "builder.md"))).toBe(true);
+  });
+});
+
+// ── list_providers (architect model-awareness tool) ─────────────────────────
+
+describe("list_providers", () => {
+  beforeEach(() => {
+    _resetProviderCacheForTests();
+  });
+
+  it("lists configured instances + default models", async () => {
+    // Zero-config: the built-in singletons exist.
+    const out = await callAsync(list_providers);
+    expect(out).toMatch(/Configured provider instances/);
+    expect(out).toContain("ollama");
+    expect(out).toContain("openrouter");
+    expect(out).toContain("zai");
+  });
+
+  it("includes model-field tier guidance for the architect", async () => {
+    const out = await callAsync(list_providers);
+    expect(out).toMatch(/cheap/i);
+    expect(out).toMatch(/frontier/i);
+    expect(out).toMatch(/Match the model to the TASK SIZE/i);
+  });
+
+  it("shows a configured instance's default model", async () => {
+    addProviderInstance({ name: "ollama-laptop", kind: "ollama", baseURL: "http://host:11434/v1", defaultModel: "qwen3.5:9b" });
+    _resetProviderCacheForTests();
+    const out = await callAsync(list_providers);
+    expect(out).toContain("ollama-laptop");
+    expect(out).toContain("qwen3.5:9b");
+  });
+
+  it("does NOT probe when no probe name is given", async () => {
+    const out = await callAsync(list_providers);
+    expect(out).not.toMatch(/Probing/);
   });
 });

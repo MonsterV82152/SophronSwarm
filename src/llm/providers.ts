@@ -40,7 +40,7 @@
  *
  * See docs/IDEAS.md (#1) + docs/ROADMAP.md (M2).
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../util/log.js";
@@ -181,21 +181,43 @@ function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: stri
 
 /** Raw config loaded from disk — cached after first read (env can change). */
 let cachedRaw: OperatorConfig | undefined;
-function loadRawConfig(): OperatorConfig {
-  if (cachedRaw) return cachedRaw;
-  const path = join(homedir(), ".sophron", "config.json");
-  if (!existsSync(path)) {
-    cachedRaw = {};
-    return cachedRaw;
-  }
+
+/** Where the operator config lives on disk (`~/.sophron/config.json`). */
+export function configPath(): string {
+  return join(homedir(), ".sophron", "config.json");
+}
+
+/**
+ * Read the raw config from disk WITHOUT touching the cache (used by the
+ * `sophron add-provider` / `remove-provider` read-modify-write flow so we
+ * always see the latest on-disk state, not a stale snapshot).
+ */
+function readRawConfigFresh(): OperatorConfig {
+  const path = configPath();
+  if (!existsSync(path)) return {};
   try {
-    cachedRaw = JSON.parse(readFileSync(path, "utf8")) as OperatorConfig;
-    return cachedRaw;
+    return JSON.parse(readFileSync(path, "utf8")) as OperatorConfig;
   } catch (e) {
     log.warn({ err: e, path }, "could not parse operator config; ignoring");
-    cachedRaw = {};
-    return cachedRaw;
+    return {};
   }
+}
+
+function loadRawConfig(): OperatorConfig {
+  if (cachedRaw) return cachedRaw;
+  cachedRaw = readRawConfigFresh();
+  return cachedRaw;
+}
+
+/** Write the config to disk (atomic via tmp+rename) + reset the read cache. */
+function writeRawConfig(cfg: OperatorConfig): void {
+  const path = configPath();
+  mkdirSync(join(homedir(), ".sophron"), { recursive: true });
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(cfg, null, 2), "utf8");
+  renameSync(tmp, path);
+  // Reset the lazy cache so the running process sees the new config.
+  _resetProviderCacheForTests();
 }
 
 /**
@@ -416,4 +438,90 @@ export function resolveModelWithProvider(model: string, provider?: ProviderName)
     return { provider, model };
   }
   return resolveModel(model);
+}
+
+// ── Mutators (sophron add-provider / remove-provider) ───────────────────────
+
+/** A provider entry as the operator supplies it to `add-provider`. */
+export interface AddProviderInput {
+  name: string;
+  kind: ProviderKind;
+  baseURL?: string;
+  apiKey?: string;
+  defaultModel?: string;
+  /** Mark as the default instance for its kind (prefix shortcuts target it). */
+  default?: boolean;
+}
+
+/**
+ * Add a named provider instance to `~/.sophron/config.json` (read-modify-write).
+ * Creates the file/array if absent. Migrates the legacy object form to the
+ * array form. Refuses a duplicate instance name (use removeProviderInstance
+ * first, or set `replace` to overwrite).
+ *
+ * Empty string fields are dropped (so the stored entry omits them and the
+ * kind defaults apply). Returns the stored entry (post kind-defaults, pre
+ * env-expansion — exactly what's on disk).
+ *
+ * @throws if the name is invalid or already exists (and `replace` is false).
+ */
+export function addProviderInstance(input: AddProviderInput, opts: { replace?: boolean } = {}): RawProviderEntry {
+  const name = input.name.trim();
+  if (!name) throw new Error("Provider 'name' is required.");
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) {
+    throw new Error(`Provider name '${name}' is invalid. Use letters, digits, hyphens, or underscores (must start alphanumeric).`);
+  }
+
+  const cfg = readRawConfigFresh();
+
+  // Build the entry to store. Drop empty fields so kind defaults apply at load.
+  const entry: RawProviderEntry = { name, kind: input.kind };
+  if (input.baseURL && input.baseURL.trim()) entry.baseURL = input.baseURL.trim();
+  if (input.apiKey && input.apiKey.trim()) entry.apiKey = input.apiKey.trim();
+  if (input.defaultModel && input.defaultModel.trim()) entry.defaultModel = input.defaultModel.trim();
+  if (input.default) entry.default = true;
+
+  // Normalize providers to the array form.
+  let arr: RawProviderEntry[];
+  if (!cfg.providers) {
+    arr = [];
+  } else if (Array.isArray(cfg.providers)) {
+    arr = cfg.providers;
+  } else {
+    // Legacy object form → migrate to instances named after each kind.
+    log.warn("config.providers is an object (legacy form); migrating to a named-instance array.");
+    arr = Object.entries(cfg.providers).map(([kind, fields]) => ({ name: kind, kind, ...(fields as object) }));
+  }
+
+  const idx = arr.findIndex((e) => e.name === name);
+  if (idx >= 0) {
+    if (!opts.replace) {
+      throw new Error(`A provider instance named '${name}' already exists. Use removeProviderInstance('${name}') first, or pass { replace: true }.`);
+    }
+    arr[idx] = entry;
+  } else {
+    arr.push(entry);
+  }
+
+  cfg.providers = arr;
+  writeRawConfig(cfg);
+  return entry;
+}
+
+/**
+ * Remove a named provider instance from `~/.sophron/config.json`.
+ * Returns true if an entry was removed, false if it wasn't found.
+ * Never removes the built-in singletons (they always exist via mergeWithDefaults
+ * when no config entry overrides them — removing the config entry just restores
+ * the env-backed default).
+ */
+export function removeProviderInstance(name: string): boolean {
+  const cfg = readRawConfigFresh();
+  if (!cfg.providers || !Array.isArray(cfg.providers)) return false;
+  const before = cfg.providers.length;
+  const filtered = cfg.providers.filter((e) => e.name !== name);
+  if (filtered.length === before) return false;
+  cfg.providers = filtered;
+  writeRawConfig(cfg);
+  return true;
 }

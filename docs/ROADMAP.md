@@ -4,7 +4,7 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-07):** 623/623 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-08):** 645/645 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
 > + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
 > (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer)
@@ -68,8 +68,9 @@ SophronSwarm (global)                          ← operator's home
 | **M5 — `sophron init` Templates** | ✅ Complete | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates; seeds standardized per-project orchestrator + global architect; 25 tests |
 | **M6 — `propose_roster`** | ✅ Complete | batch draft→approve→close (transactional `writeRoster`); `sophron agents --drafts/--approve*/--reject*`; 50 tests |
 | **M7 — Global Orchestrator meta-layer** | ✅ Complete | the "CEO" agent above all projects (NO memory via `noMemory`); scoped tools (`list_projects`/`propose_project`/`init_project`); `GLOBAL_ORCHESTRATOR` template + installer; 26 tests |
-| **M8 — Wire Global Orchestrator into TUI Home** | 🔬 | replaces the M3 Orchestrator tab stub with real chat |
+| **M8 — Wire Global Orchestrator into TUI Home** | ✅ Complete | real global-orchestrator chat in Home › Orchestrator; project-switch ghost-lines fix; `/clear` resets chat | 
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
+| **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
 
 ---
 
@@ -288,10 +289,15 @@ M8 wires it into the TUI Home chat.
 
 ---
 
-### M8 — Wire Global Orchestrator into TUI Home 🔬
-**Why here:** M3 ships the Orchestrator tab as a stub because the global
-orchestrator does not exist yet. M8 replaces the stub with the real chat and
-the project-proposal flow once M7 lands.
+### M8 — Wire Global Orchestrator into TUI Home ✅
+**Why here:** M3 shipped the Orchestrator tab as a stub because the global
+orchestrator did not exist yet. M8 replaced the stub with the real chat
+(`OrchestratorChat`) backed by `runAgent`, plus the project-switch
+ghost-lines fix and `/clear` chat reset.
+
+**Delivered:** the full Home experience — talk to the global orchestrator,
+propose/create projects, monitor all project health, jump into any project —
+all from one terminal session.
 
 **Scope:**
 - Replace the M3 Orchestrator-tab stub with the real global-orchestrator chat
@@ -310,8 +316,36 @@ health, jump into any project — all from one terminal session.
 ### M9 — Web UI (Phase 5b) ⏸ Deferred
 **Why deferred:** CLI-first is a locked decision (`PROJECT_OVERVIEW.md` §7.6).
 The web UI shares the JSONL event log and is low-dependency, so it can be
-picked up in parallel by a separate effort without blocking M3–M8. Revisit
-when the CLI vision (M3–M8) is stable.
+picked up in parallel by a separate effort without blocking the CLI vision.
+Revisit when the CLI vision (M3–M10) is stable.
+
+---
+
+### M10 — Operator Ergonomics ✅
+**Why here:** three operator-facing gaps surfaced in use: (1) no easy way to
+add providers (manual `config.json` editing only), (2) the architect wasn't
+model-aware and couldn't actually call `propose_roster`, (3) no way to delete
+an accidentally-created project.
+
+**Scope / delivered:**
+- **Provider management** — `sophron add-provider` (interactive menu OR
+  `--name/--kind/--base-url/--api-key/--model/--default` flags) + `sophron
+  remove-provider <name>`. New `addProviderInstance`/`removeProviderInstance`
+  in `providers.ts` (read-modify-write, atomic, migrates legacy object form).
+  `${ENV_VAR}` references encouraged for secrets (expanded at load).
+- **Model-aware architect** — new `list_providers` global tool (read-only:
+  lists configured instances + default models + tier guidance; optional
+  `probe` pings `/v1/models`). `GLOBAL_ARCHITECT` prompt now documents the
+  cheap/mid/frontier/inherit tiers + the right-size principle. **Bug fix:**
+  the architect's `tools:` list was missing `propose_roster`/`propose_agent`
+  (the dispatcher allowlist silently blocked them) — now included.
+- **Project management** — `sophron projects` command exposing the existing
+  registry functions: `list` (default), `remove <name|path>` (with confirm /
+  `-y`; unregisters only — does NOT delete files), `rename`, `pin`/`unpin`.
+
+**Delivers:** operators can self-serve providers, projects, and expect the
+architect to pick sensible models — no config-file editing or hand-holding
+required.
 
 ---
 
@@ -322,22 +356,20 @@ M1 ✅ (purifier)  ─┐
 M2 ✅ (providers)  ─┴─ done
 
 M5 ✅ (templates) ─► M6 ✅ (propose_roster) ─► M7 ✅ (global orchestrator) ──┐
-                                                                            ├─► M8 (wire into Home)
+                                                                            ├─► M8 ✅ (wire into Home)
 M3 ✅ (TUI shell rewrite) ─► M4 ✅ (/help)                                  ┘
+
+M10 ✅ (operator ergonomics) ── builds on M2 (providers) + M5/M7 (architect)
 
 M9 (web UI) ── optional / parallel / deferred
 ```
 
-- **M5 / M3** are both unblocked now and **independent** of each other — they
-  can be built in parallel.
-- **M4** depends on **M3** (its view set).
-- **M6** depends on **M5** (done); **M7** depends on **M5 + M6** (done);
-  **M8** depends on **M3 + M7** (both done — UNBLOCKED).
+- **M10** builds on **M2** (provider config) + **M5/M7** (the global
+  architect template).
 
 ## Starting point
 
-M3 + M4 + M5 + M6 + M7 are ✅ complete (623/623 tests). **M8 (wire global
-orchestrator into TUI Home)** is the next build — it replaces the M3
-Orchestrator-tab stub with the real global-orchestrator chat + the
-project-proposal flow (the M7 `propose_project` → `init_project` chain behind
-the chat). M8 is the last build before the core CLI vision (M3–M8) is complete.
+M3–M8 are ✅ complete and **M10 (operator ergonomics)** is ✅ complete
+(645/645 tests). The core CLI vision (M3–M8 + M10) is now complete. **M9
+(web UI)** remains deferred (CLI-first is locked); it can be picked up in
+parallel by a separate effort.
