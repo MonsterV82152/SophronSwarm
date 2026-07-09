@@ -25,6 +25,16 @@ export type PermissionMode =
  */
 export type ModelTier = "inherit" | "frontier" | "mid" | "cheap" | (string & {});
 
+/**
+ * A runtime model override: concrete model id + optional named provider instance.
+ * Used by `/model` slash commands and `sophron run --model` to temporarily change
+ * an agent's model without editing its definition file.
+ */
+export interface ModelOverride {
+  model: string;
+  provider?: import("./llm/providers.js").ProviderName;
+}
+
 export interface AgentDefinition {
   /** Unique id, lowercase-hyphenated. Must match filename (without ext). */
   name: string;

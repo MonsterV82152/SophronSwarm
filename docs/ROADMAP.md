@@ -4,13 +4,14 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-08):** 657/657 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-08):** 669/669 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
 > + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
-> (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer)
-> complete.
+> (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer) +
+> M8 (wire global orchestrator into Home) + M10 (operator ergonomics) + M11
+> (runtime `/model` switching) + M12 (global orchestrator project context) complete.
 >
-> **Last updated:** 2026-07-07
+> **Last updated:** 2026-07-08 (M12 complete)
 
 ---
 
@@ -71,6 +72,10 @@ SophronSwarm (global)                          ← operator's home
 | **M8 — Wire Global Orchestrator into TUI Home** | ✅ Complete | real global-orchestrator chat in Home › Orchestrator; project-switch ghost-lines fix; `/clear` resets chat | 
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
 | **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
+| **M11 — Runtime Model Switching (`/model`)** | ✅ Complete | runtime model override + `/model` slash command + default orchestrator/architect/global-orchestrator to `frontier`; 12 new tests |
+| **M12 — Global Orchestrator Project Context** | ✅ Complete | `read_project_overview` tool + goal/constraints in proposal/creation + richer discovery/handoff prompt; 7 new tests |
+| **M13 — Provider Descriptions** | 🔜 Planned | Small — `description` field on provider instances surfaced to the architect via `list_providers` |
+| **M14 — TUI Surface-Switch Render Cleanup** | 🔜 Planned | Small–Medium — eliminate visual artifacts when switching between Home and Project surfaces |
 
 ---
 
@@ -352,6 +357,111 @@ required.
 
 ---
 
+### M11 — Runtime Model Switching (`/model`) ✅
+**Size:** Medium  
+**Built (2026-07-08):** default templates now use `frontier`; operators can
+change any agent's model on the fly via `/model` or `--model`.
+
+**Scope:**
+- Updated `STANDARD_ORCHESTRATOR`, `GLOBAL_ARCHITECT`, and `GLOBAL_ORCHESTRATOR`
+  templates so their default `model:` is `frontier` (resolved via the operator's
+  tier map) instead of `ollama:qwen3.5:9b-thinking`.
+- Added a runtime model-override path:
+  - `RunOptions` accepts an optional `modelOverride` (`{ model, provider? }`).
+  - The agent loop (`src/agent/loop.ts`) uses the override for `llm.complete`
+    when present, otherwise falls back to `agent.model`/`agent.provider`.
+  - The TUI keeps a per-session override map keyed by agent name.
+- Extended `parseSlashCommand` with `/model <agent> <model-spec>` (and a bare
+  `/model <model-spec>` when viewing an agent detail). Model specs support named
+  tiers (`frontier`/`mid`/`cheap`), provider-prefixed ids (`ollama:...`), and
+  named provider instances (`my-ollama:qwen3.5:9b`).
+- Added `resolveModelSpec()` in `src/llm/providers.ts` to resolve those specs.
+- Surfaced the effective model in the TUI Agent detail header (with an
+  "override" badge) and acknowledged changes via the output log.
+- Added a `--model <spec>` flag to `sophron run` so the CLI path supports the
+  same override.
+- 12 new tests: `resolveModelSpec`, `/model` slash parsing, template defaults,
+  AgentDetail override display.
+
+**Delivers:** orchestrator/architect/global-orchestrator default to frontier;
+operators can flip any agent's model on the fly from chat or CLI.
+
+---
+
+### M12 — Global Orchestrator Project Context ✅
+**Size:** Small–Medium  
+**Built (2026-07-08):** the global orchestrator can now read existing project
+overviews and carry a structured discovery/handoff conversation.
+
+**Scope:**
+- Added `read_project_overview` global tool that reads
+  `<project>/.sophron/shared/OVERVIEW.md` for any registered project (or an
+  absolute workspace path), guarded by the same path-traversal rules as
+  `init_project`.
+- Enriched `propose_project` and `init_project` with optional `goal` and
+  `constraints` fields. When provided, `init_project` seeds `OVERVIEW.md` with
+  structured `## Goal`, `## Constraints`, and `## Stack` sections.
+- Rewrote the `GLOBAL_ORCHESTRATOR` prompt:
+  - Encourages a short discovery phase (goal, stack, constraints, feasibility).
+  - Uses `read_project_overview` on existing projects to avoid duplication.
+  - Captures agreed goal/constraints in the proposal and seeds them into the
+    new project's overview.
+  - Explicitly hands off code-level planning to the per-project orchestrator.
+- Added `read_project_overview` to the global orchestrator's `tools:` allowlist.
+- 7 new tests: overview read (found/missing/unknown/traversal), proposal
+  goal/constraints, init overview seeding, and template prompt assertions.
+
+**Delivers:** the global orchestrator can discuss projects in context and
+produce clearer, goal-driven handoffs to per-project orchestrators.
+
+---
+
+### M13 — Provider Descriptions 🔜
+**Size:** Small  
+**Why now:** with named provider instances, the architect needs human-readable
+hints about what each provider is for and what it can do.
+
+**Scope:**
+- Add `description?: string` to `ProviderConfig`, `RawProviderEntry`,
+  `AddProviderInput`, and `ProviderPatch`.
+- Preserve the field through `applyKindDefaults`, config migration, and the
+  `addProviderInstance`/`updateProviderInstance` read-modify-write flow.
+- Add `--description` to `sophron add-provider` and `sophron edit-provider`.
+- Update the `list_providers` tool output to include each provider's
+  description.
+- Update the `GLOBAL_ARCHITECT` prompt to instruct the architect to read
+  provider descriptions when choosing models.
+- Tests: config round-trip, CLI flag handling, tool output formatting.
+
+**Delivers:** every provider instance can carry an operator-provided
+description, and the architect uses it when assigning models.
+
+---
+
+### M14 — TUI Surface-Switch Render Cleanup 🔜
+**Size:** Small–Medium  
+**Why now:** switching from the Project surface back to Home leaves visual
+artifacts on top of the current TUI, indicating Ink's remount key is not fully
+clearing the previous buffer.
+
+**Scope:**
+- Reproduce the project→home artifact reliably.
+- Add an explicit terminal buffer clear around surface switches in
+  `src/tui/app.tsx` (e.g., on `goHome`, `enterProject`, and `switchProject`).
+  Use ANSI erase-in-display + home-cursor, guarded so it does not run in test
+  renderers.
+- Ensure state resets (`setBlocks([])`, `setMemoryContent("")`,
+  `setRunDetail(null)`) complete before the next frame, and tighten the content
+  area remount key so old components are fully unmounted.
+- Consider moving the static output log to Ink `<Static>` so historical lines
+  do not interfere with dynamic content height.
+- Add a regression test if feasible (Ink render snapshot or nav-action test).
+
+**Delivers:** clean, artifact-free transitions between Home and Project
+surfaces.
+
+---
+
 ## Dependency graph
 
 ```
@@ -364,6 +474,11 @@ M3 ✅ (TUI shell rewrite) ─► M4 ✅ (/help)                                
 
 M10 ✅ (operator ergonomics) ── builds on M2 (providers) + M5/M7 (architect)
 
+M11 (model switching) ── builds on M2 (providers) + M3 (TUI) + M5/M7 (templates)
+M12 (global orch context) ── builds on M7 (global orchestrator)
+M13 (provider descriptions) ── builds on M2 + M10 (provider CLI)
+M14 (TUI render cleanup) ── builds on M3 + M8 (home/project switching)
+
 M9 (web UI) ── optional / parallel / deferred
 ```
 
@@ -372,7 +487,8 @@ M9 (web UI) ── optional / parallel / deferred
 
 ## Starting point
 
-M3–M8 are ✅ complete and **M10 (operator ergonomics)** is ✅ complete
-(645/645 tests). The core CLI vision (M3–M8 + M10) is now complete. **M9
-(web UI)** remains deferred (CLI-first is locked); it can be picked up in
-parallel by a separate effort.
+M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, and
+**M12 (global-orchestrator project context)** are ✅ complete. The next batch is
+**M13–M14**: provider descriptions and TUI render cleanup. **M9 (web UI)** remains
+deferred (CLI-first is locked) and can be picked up in parallel by a separate
+effort.

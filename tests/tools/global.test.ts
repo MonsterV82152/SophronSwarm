@@ -6,12 +6,13 @@
  * isolated (same pattern as templates/registry tests).
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import {
   list_projects,
+  read_project_overview,
   propose_project,
   init_project,
   list_providers,
@@ -96,6 +97,50 @@ describe("list_projects", () => {
   });
 });
 
+// ── read_project_overview ───────────────────────────────────────────────────
+
+describe("read_project_overview", () => {
+  it("returns the overview content for a registered project", () => {
+    const projectDir = join(workspaceRoot(), "alpha");
+    mkdirSync(join(projectDir, ".sophron", "shared"), { recursive: true });
+    writeFileSync(join(projectDir, ".sophron", "shared", "OVERVIEW.md"), "# Alpha\n\nGoal: test overview reads.\n", "utf8");
+    registerProject(projectDir, "alpha");
+
+    const out = call(read_project_overview, { project: "alpha" });
+    expect(out).toContain("OVERVIEW for project 'alpha'");
+    expect(out).toContain("Goal: test overview reads.");
+  });
+
+  it("accepts an absolute path under the workspace", () => {
+    const projectDir = join(workspaceRoot(), "beta");
+    mkdirSync(join(projectDir, ".sophron", "shared"), { recursive: true });
+    writeFileSync(join(projectDir, ".sophron", "shared", "OVERVIEW.md"), "# Beta\n", "utf8");
+
+    const out = call(read_project_overview, { project: projectDir });
+    expect(out).toContain("OVERVIEW for project");
+    expect(out).toContain("# Beta");
+  });
+
+  it("returns a friendly message when the overview is missing", () => {
+    const projectDir = join(workspaceRoot(), "gamma");
+    mkdirSync(join(projectDir, ".sophron", "shared"), { recursive: true });
+    registerProject(projectDir, "gamma");
+
+    const out = call(read_project_overview, { project: "gamma" });
+    expect(out).toMatch(/has no OVERVIEW\.md/);
+  });
+
+  it("returns a friendly message for an unknown project name", () => {
+    const out = call(read_project_overview, { project: "does-not-exist" });
+    expect(out).toMatch(/not registered/);
+  });
+
+  it("rejects a path outside the workspace root", () => {
+    const out = call(read_project_overview, { project: "/etc/passwd" });
+    expect(out).toMatch(/outside the SophronSwarm workspace/);
+  });
+});
+
 // ── propose_project ─────────────────────────────────────────────────────────
 
 describe("propose_project", () => {
@@ -149,6 +194,17 @@ describe("propose_project", () => {
   it("is purely informational — never writes to disk", () => {
     call(propose_project, { name: "ghost", summary: "x" });
     expect(existsSync(join(workspaceRoot(), "ghost"))).toBe(false);
+  });
+
+  it("includes goal and constraints in the proposal when provided", () => {
+    const out = call(propose_project, {
+      name: "goal-proj",
+      summary: "A project with goals.",
+      goal: "Automate the thing.",
+      constraints: "Must be local-only; no cloud APIs.",
+    });
+    expect(out).toContain("goal:     Automate the thing.");
+    expect(out).toContain("constraints: Must be local-only; no cloud APIs.");
   });
 });
 
@@ -212,6 +268,30 @@ describe("init_project", () => {
     const out = call(init_project, { name: "ow", template: "cli", force: true });
     expect(out).toContain("Created project 'ow'");
     expect(existsSync(join(workspaceRoot(), "ow", "agents", "builder.md"))).toBe(true);
+  });
+
+  it("seeds OVERVIEW.md with goal and constraints when provided", () => {
+    call(init_project, {
+      name: "goal-project",
+      template: "minimal",
+      goal: "Automate widget generation.",
+      constraints: "No external network calls.",
+    });
+    const overviewPath = join(workspaceRoot(), "goal-project", ".sophron", "shared", "OVERVIEW.md");
+    expect(existsSync(overviewPath)).toBe(true);
+    const content = readFileSync(overviewPath, "utf8");
+    expect(content).toContain("## Goal");
+    expect(content).toContain("Automate widget generation.");
+    expect(content).toContain("## Constraints");
+    expect(content).toContain("No external network calls.");
+    expect(content).toContain("## Stack");
+  });
+
+  it("keeps the template default OVERVIEW.md when no goal/constraints are provided", () => {
+    call(init_project, { name: "default-project", template: "minimal" });
+    const overviewPath = join(workspaceRoot(), "default-project", ".sophron", "shared", "OVERVIEW.md");
+    const content = readFileSync(overviewPath, "utf8");
+    expect(content).toContain("Describe your project's goal");
   });
 });
 

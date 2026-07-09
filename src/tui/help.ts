@@ -47,6 +47,7 @@ const CORE_HELP = `SophronSwarm V3 — help
 ── Always-available commands ──
   /help         Show this help
   /projects     Jump to the Projects tab
+  /model <a> <spec>  Change an agent's model for this session
   /clear        Clear the output log
   /quit         Exit SophronSwarm`;
 
@@ -81,11 +82,13 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
   "project:agents": `── Agents ──
   ↑/↓ to select an agent · Enter to open its detail (config + live stream).
   /memory <agent>  Show that agent's per-agent memory
+  /model <agent> <spec>  Change the agent's model for this session
   /run <agent> "<task>"  Queue a task for an agent (use CLI for now)`,
 
   "project:agentDetail": `── Agent detail ──
   Shows the agent's config + a live stream of its latest run (refreshes
   every 500ms). Type a task below to queue it for this agent.
+  /model <spec>      Change this agent's model for this session
   /approve <id> y|n  Resolve a pending approval for this agent
   /rewind <runId>    Rewind to a prior checkpoint of this agent's run
   Esc                Back to the Agents list`,

@@ -19,6 +19,7 @@ export type SlashCommand =
   | { kind: "cost" }
   | { kind: "memory"; agent?: string }
   | { kind: "run"; agent: string; task: string }
+  | { kind: "model"; agent?: string; spec: string }
   | { kind: "approve"; id: string; decision: "yes" | "no" }
   | { kind: "rewind"; runId: string }
   | { kind: "clear" }
@@ -79,6 +80,19 @@ export function parseSlashCommand(input: string): SlashCommand {
         return { kind: "unknown", raw: trimmed, reason: "/run requires <agent> \"<task>\"" };
       }
       return { kind: "run", agent: tokens[0]!, task: tokens.slice(1).join(" ") };
+    }
+    case "/model": {
+      if (tokens.length === 0) {
+        return {
+          kind: "unknown",
+          raw: trimmed,
+          reason: "/model requires <agent> <model-spec> (or just <model-spec> when viewing an agent)",
+        };
+      }
+      if (tokens.length === 1) {
+        return { kind: "model", spec: tokens[0]! };
+      }
+      return { kind: "model", agent: tokens[0]!, spec: tokens.slice(1).join(" ") };
     }
     case "/approve": {
       if (tokens.length < 2) {
@@ -157,6 +171,7 @@ export const HELP_TEXT = `SophronSwarm V3 — TUI commands:
   /cost                Show MCP token-cost meter
   /memory [agent]      Show per-agent memory (or shared if no agent)
   /run <agent> "<t>"   Run an agent on a task
+  /model <agent> <id>  Change an agent's model for this session
   /approve <id> y|n    Resolve a pending approval
   /rewind <runId>      Rewind to a prior checkpoint
   /clear               Clear the output log

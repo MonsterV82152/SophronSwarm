@@ -235,6 +235,18 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     expect(GLOBAL_ARCHITECT).toMatch(/match the model to the task size/i);
   });
 
+  it("standard orchestrator defaults to frontier", () => {
+    expect(STANDARD_ORCHESTRATOR).toMatch(/model:\s*frontier/);
+  });
+
+  it("global architect defaults to frontier", () => {
+    expect(GLOBAL_ARCHITECT).toMatch(/model:\s*frontier/);
+  });
+
+  it("global orchestrator defaults to frontier", () => {
+    expect(GLOBAL_ORCHESTRATOR).toMatch(/model:\s*frontier/);
+  });
+
   it("global orchestrator is the no-memory CEO (M7)", () => {
     expect(GLOBAL_ORCHESTRATOR).toContain("name: global-orchestrator");
     expect(GLOBAL_ORCHESTRATOR).toContain("noMemory: true"); // CRITICAL: no memory injection
@@ -247,6 +259,13 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     expect(GLOBAL_ORCHESTRATOR).not.toContain("apply_patch");
     // It may only delegate to the architect.
     expect(GLOBAL_ORCHESTRATOR).toContain("architect");
+  });
+
+  it("global orchestrator can read existing project overviews (M12)", () => {
+    expect(GLOBAL_ORCHESTRATOR).toContain("read_project_overview");
+    expect(GLOBAL_ORCHESTRATOR).toMatch(/discovery phase|goal.*constraints/i);
+    expect(GLOBAL_ORCHESTRATOR).toMatch(/NO code planning/i);
+    expect(GLOBAL_ORCHESTRATOR).toMatch(/per-project orchestrator/i);
   });
 });
 

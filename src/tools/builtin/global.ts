@@ -5,9 +5,10 @@
  * The global orchestrator is the "CEO" agent above all projects. It has NO
  * memory and NO codebase workspace — it only manages the project lifecycle.
  * Its scoped tool set (no `run_command` / `apply_patch`):
- *   - list_projects   — read the project registry
- *   - propose_project — draft a project proposal (name, path, template, summary)
- *   - init_project    — controlled scaffolding (after operator approval)
+ *   - list_projects         — read the project registry
+ *   - read_project_overview — read an existing project's OVERVIEW.md
+ *   - propose_project       — draft a project proposal (name, path, template, summary, goal, constraints)
+ *   - init_project          — controlled scaffolding (after operator approval)
  *
  * `propose_project` vs `init_project` separation:
  *   - propose_project DRAFTS a proposal as a structured result for the operator
@@ -20,10 +21,12 @@
  *
  * See docs/ROADMAP.md (M7) + docs/IDEAS.md §6.
  */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { listProjects, findByName, type ProjectEntry } from "../../project/registry.js";
 import { scaffoldProject, listTemplates, getTemplate } from "../../init/templates.js";
+import { SHARED_DIR_NAME } from "../../memory/sharedStore.js";
 import { listProviders } from "../../llm/providers.js";
 import type { ToolSpec } from "../schema.js";
 
@@ -50,6 +53,21 @@ function coerceToWorkspace(p: string): string {
     );
   }
   return abs;
+}
+
+/** Resolve a project identifier (registry name or absolute path) to an absolute
+ *  path under the workspace root. Throws if the project is unknown or the path
+ *  escapes the workspace. */
+function resolveProjectPath(project: string): string {
+  let entry: ProjectEntry | undefined;
+  if (isAbsolute(project)) {
+    return coerceToWorkspace(project);
+  }
+  entry = findByName(project);
+  if (!entry) {
+    throw new Error(`Project '${project}' is not registered. Use list_projects to see known projects.`);
+  }
+  return coerceToWorkspace(entry.path);
 }
 
 // ── list_projects ───────────────────────────────────────────────────────────
@@ -86,14 +104,53 @@ function relativeTime(ms: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+// ── read_project_overview ───────────────────────────────────────────────────
+
+export const read_project_overview: ToolSpec = {
+  name: "read_project_overview",
+  description:
+    "Read the OVERVIEW.md of an existing SophronSwarm project. Use this to understand " +
+    "a project's goal, stack, and constraints before proposing something similar or " +
+    "related. The 'project' argument is a registered project name or an absolute path " +
+    "under ~/sophron_workspace. Returns the overview markdown, or a note if none exists.",
+  parameters: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Registered project name or absolute path under ~/sophron_workspace.",
+      },
+    },
+    required: ["project"],
+  },
+  handler: ({ args }) => {
+    const project = typeof args["project"] === "string" ? (args["project"] as string).trim() : "";
+    if (!project) return "Refused: 'project' is required.";
+    try {
+      const projectPath = resolveProjectPath(project);
+      const overviewPath = join(projectPath, SHARED_DIR_NAME, "OVERVIEW.md");
+      if (!existsSync(overviewPath)) {
+        return `Project at ${projectPath} has no OVERVIEW.md yet.`;
+      }
+      const content = readFileSync(overviewPath, "utf8");
+      if (!content.trim()) {
+        return `Project at ${projectPath} has an empty OVERVIEW.md.`;
+      }
+      return `OVERVIEW for project '${project}':\n\n${content}`;
+    } catch (e) {
+      return `Could not read project overview: ${(e as Error).message}`;
+    }
+  },
+};
+
 // ── propose_project ─────────────────────────────────────────────────────────
 
 export const propose_project: ToolSpec = {
   name: "propose_project",
   description:
     "Draft a project proposal for the operator to review. Does NOT create anything — " +
-    "it returns a structured proposal (name, path, template, summary) that the operator " +
-    "must approve before init_project runs. Validates the name + template. " +
+    "it returns a structured proposal (name, path, template, summary, goal, constraints) " +
+    "that the operator must approve before init_project runs. Validates the name + template. " +
     "Projects live under ~/sophron_workspace/<name>.",
   parameters: {
     type: "object",
@@ -110,6 +167,14 @@ export const propose_project: ToolSpec = {
         type: "string",
         description: "Template to scaffold from (e.g. minimal, cli, webapp, data-pipeline). Omit for 'minimal'.",
       },
+      goal: {
+        type: "string",
+        description: "The project's primary goal. Captured in the proposal and seeded into OVERVIEW.md on init.",
+      },
+      constraints: {
+        type: "string",
+        description: "Constraints, non-goals, or feasibility notes. Seeded into OVERVIEW.md on init.",
+      },
     },
     required: ["name", "summary"],
   },
@@ -117,6 +182,8 @@ export const propose_project: ToolSpec = {
     const name = typeof args["name"] === "string" ? (args["name"] as string).trim() : "";
     const summary = typeof args["summary"] === "string" ? (args["summary"] as string).trim() : "";
     const template = typeof args["template"] === "string" ? (args["template"] as string).trim() : "minimal";
+    const goal = typeof args["goal"] === "string" ? (args["goal"] as string).trim() : "";
+    const constraints = typeof args["constraints"] === "string" ? (args["constraints"] as string).trim() : "";
 
     if (!name) return "Refused: 'name' is required.";
     if (!summary) return "Refused: 'summary' is required.";
@@ -138,16 +205,21 @@ export const propose_project: ToolSpec = {
     }
 
     const path = join(workspaceRoot(), name);
-    return [
+    const lines = [
       `PROPOSED PROJECT`,
       `  name:     ${name}`,
       `  path:     ${path}`,
       `  template: ${template} — ${t.description}`,
       `  summary:  ${summary}`,
+    ];
+    if (goal) lines.push(`  goal:     ${goal}`);
+    if (constraints) lines.push(`  constraints: ${constraints}`);
+    lines.push(
       ``,
       `This is a DRAFT. Nothing has been created. If the operator approves, run`,
       `init_project with the same name to scaffold it.`,
-    ].join("\n");
+    );
+    return lines.join("\n");
   },
 };
 
@@ -159,6 +231,7 @@ export const init_project: ToolSpec = {
     "Scaffold a new project (after the operator approved a propose_project proposal). " +
     "Creates ~/sophron_workspace/<name>/ with the template's agents + seeds the standardized " +
     "orchestrator + registers it in projects.json. Refuses to clobber an existing agents/ dir. " +
+    "Optional goal/constraints are written into the project's OVERVIEW.md. " +
     "This is the ONLY way the global orchestrator creates projects — no raw shell.",
   parameters: {
     type: "object",
@@ -166,6 +239,8 @@ export const init_project: ToolSpec = {
       name: { type: "string", description: "Project alias (must match the approved proposal)." },
       template: { type: "string", description: "Template to scaffold from. Omit for 'minimal'." },
       force: { type: "boolean", description: "Overwrite an existing agents/ dir (default: refuse)." },
+      goal: { type: "string", description: "Project goal to seed into OVERVIEW.md." },
+      constraints: { type: "string", description: "Constraints to seed into OVERVIEW.md." },
     },
     required: ["name"],
   },
@@ -173,6 +248,8 @@ export const init_project: ToolSpec = {
     const name = typeof args["name"] === "string" ? (args["name"] as string).trim() : "";
     const template = typeof args["template"] === "string" ? (args["template"] as string).trim() : "minimal";
     const force = args["force"] === true;
+    const goal = typeof args["goal"] === "string" ? (args["goal"] as string).trim() : "";
+    const constraints = typeof args["constraints"] === "string" ? (args["constraints"] as string).trim() : "";
 
     if (!name) return "Refused: 'name' is required.";
     if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
@@ -185,6 +262,19 @@ export const init_project: ToolSpec = {
       // since `name` is validated above, but keep the invariant explicit).
       const abs = coerceToWorkspace(path);
       const result = scaffoldProject(abs, { template, name, force });
+
+      // If the operator captured a goal or constraints, rewrite OVERVIEW.md
+      // with a structured overview. Otherwise leave the template seed as-is.
+      if (goal || constraints) {
+        const overviewPath = join(abs, SHARED_DIR_NAME, "OVERVIEW.md");
+        const sections = ["# Project Overview", "", "## Goal", goal || "(to be refined by the project orchestrator)"];
+        if (constraints) {
+          sections.push("", "## Constraints", constraints);
+        }
+        sections.push("", "## Stack", "[To be filled by the per-project orchestrator]");
+        writeFileSync(overviewPath, sections.join("\n") + "\n", "utf8");
+      }
+
       const agentList = result.created.agents.join(", ");
       const sharedList = result.created.shared.length > 0 ? result.created.shared.join(", ") : "(none)";
       return [
@@ -270,4 +360,4 @@ export const list_providers: ToolSpec = {
   },
 };
 
-export const GLOBAL_TOOLS: ToolSpec[] = [list_projects, propose_project, init_project, list_providers];
+export const GLOBAL_TOOLS: ToolSpec[] = [list_projects, read_project_overview, propose_project, init_project, list_providers];

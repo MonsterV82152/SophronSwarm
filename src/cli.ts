@@ -17,7 +17,7 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
-import { listProviders, getProvider, addProviderInstance, removeProviderInstance, updateProviderInstance, getRawProviderEntry, configPath, type ProviderKind } from "./llm/providers.js";
+import { listProviders, getProvider, addProviderInstance, removeProviderInstance, updateProviderInstance, getRawProviderEntry, configPath, resolveModelSpec, type ProviderKind } from "./llm/providers.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { AgentDraftStore } from "./agent/drafts.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
@@ -48,7 +48,8 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<agent>", "agent name")
     .argument("<task>", "task prompt")
     .option("-d, --dir <path>", "working directory", process.cwd())
-    .action(async (agent: string, task: string, opts: { dir: string }) => {
+    .option("-m, --model <spec>", "override the agent's model for this run (tier, provider:model, or bare id)")
+    .action(async (agent: string, task: string, opts: { dir: string; model?: string }) => {
       const workingDir = resolve(opts.dir);
 
       // ── Load agent ──────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ export async function runCli(argv: string[]): Promise<void> {
       const services = buildServices(workingDir, registry);
 
       try {
+        const modelOverride = opts.model ? resolveModelSpec(opts.model) : undefined;
         const { state } = await runAgent({
           agent: def,
           task,
@@ -80,6 +82,7 @@ export async function runCli(argv: string[]): Promise<void> {
           dispatcher: services.dispatcher,
           checkpointer: services.checkpointer,
           services,
+          modelOverride,
         });
 
         // ── Print result ──────────────────────────────────────────────────

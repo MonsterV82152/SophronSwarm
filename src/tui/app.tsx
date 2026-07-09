@@ -18,6 +18,7 @@ import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseSlashCommand } from "./slashCommands.js";
+import { resolveModelSpec } from "../llm/providers.js";
 import { helpForView, helpViewFor } from "./help.js";
 import { buildDashboard, buildOverview, readRunDetail, type OverviewModel, type RunDetail } from "./dashboard.js";
 import { CheckpointManager } from "../memory/checkpoints.js";
@@ -55,6 +56,7 @@ import { listProjects, registerProject, type ProjectEntry } from "../project/reg
 import type { SharedServices } from "../tools/schema.js";
 import type { ApprovalsQueue } from "./approvals.js";
 import type { AgentRegistry } from "../agent/registry.js";
+import type { ModelOverride } from "../types.js";
 
 export interface AppProps {
   services: SharedServices;
@@ -124,6 +126,35 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
     const id = blockIdRef.current++;
     setBlocks((prev) => [...prev.slice(-6), { id, text, color }]);
   }, []);
+
+  // ── Runtime model overrides (M11) ──
+  // Keyed by agent name. Used by `/model` and surfaced in Agent detail.
+  const [modelOverrides, setModelOverrides] = useState<Record<string, ModelOverride>>({});
+
+  const effectiveModelFor = useCallback(
+    (agentName: string): string | undefined => {
+      const override = modelOverrides[agentName];
+      if (override) return override.model;
+      const agent = registry.get(agentName);
+      return agent?.model;
+    },
+    [modelOverrides, registry],
+  );
+
+  const applyModelOverride = useCallback(
+    (agentName: string, spec: string): boolean => {
+      try {
+        const resolved = resolveModelSpec(spec);
+        setModelOverrides((prev) => ({ ...prev, [agentName]: resolved }));
+        pushBlock(`Model override set for ${agentName}: ${resolved.model} [${resolved.provider}]`, "green");
+        return true;
+      } catch (e) {
+        pushBlock(`Could not set model for ${agentName}: ${(e as Error).message}`, "red");
+        return false;
+      }
+    },
+    [pushBlock],
+  );
 
   // Dispatch a nav action (clamps list selections against current data sizes).
   const dispatch = useCallback(
@@ -203,6 +234,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           dispatcher: services.dispatcher,
           checkpointer: services.checkpointer,
           services,
+          modelOverride: modelOverrides[agent.name],
         });
         const reply = result.state.messages
           .filter((m) => m.role === "assistant" && m.content)
@@ -316,6 +348,15 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           if (nav.surface === "project") setNav((p) => ({ ...p, projectTabIndex: PROJECT_TABS.indexOf("memory"), focus: "tabs" }));
           break;
         }
+        case "model": {
+          const targetAgent = cmd.agent ?? nav.agentDetail;
+          if (!targetAgent) {
+            pushBlock("Enter an agent detail first, or use /model <agent> <spec>.", "yellow");
+            break;
+          }
+          applyModelOverride(targetAgent, cmd.spec);
+          break;
+        }
         case "approve": {
           const res = approvals.resolve(cmd.id, cmd.decision === "yes" ? "allow" : "deny");
           pushBlock(res ? `Approved ${res.item.shortId}: ${res.decision}` : `No pending approval '${cmd.id}'`, res ? "green" : "red");
@@ -348,7 +389,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
       }
     },
-    [nav.surface, nav.agentDetail, nav.homeTabIndex, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning],
+    [nav.surface, nav.agentDetail, nav.homeTabIndex, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning, applyModelOverride],
   );
 
   // ── Keyboard input → nav actions ──
@@ -500,6 +541,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
             runDetail={runDetail}
             memoryContent={memoryContent}
             memoryLabel={memoryLabel}
+            effectiveModelFor={effectiveModelFor}
           />
         )}
       </Box>
@@ -575,15 +617,17 @@ function ProjectContent({
   runDetail,
   memoryContent,
   memoryLabel,
+  effectiveModelFor,
 }: {
   nav: NavState;
   model: ReturnType<typeof buildDashboard>;
   runDetail: RunDetail | null;
   memoryContent: string;
   memoryLabel: string;
+  effectiveModelFor?: (agentName: string) => string | undefined;
 }) {
   if (nav.agentDetail) {
-    return <AgentDetail model={model} agentName={nav.agentDetail} />;
+    return <AgentDetail model={model} agentName={nav.agentDetail} effectiveModel={effectiveModelFor?.(nav.agentDetail)} />;
   }
   if (nav.runDetail) {
     return <RunDetailView detail={runDetail} />;

@@ -9,6 +9,7 @@ import {
   defaultForKind,
   resolveModel,
   resolveModelWithProvider,
+  resolveModelSpec,
   addProviderInstance,
   removeProviderInstance,
   updateProviderInstance,
@@ -502,6 +503,68 @@ describe("getRawProviderEntry", () => {
 
   it("returns undefined for a non-existent name", () => {
     expect(getRawProviderEntry("ghost")).toBeUndefined();
+  });
+});
+
+describe("resolveModelSpec", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "sophron-spec-home-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    for (const k of ["OPENROUTER_API_KEY", "OPENROUTER_DEFAULT_MODEL", "ZAI_API_KEY", "ZAI_DEFAULT_MODEL", "OLLAMA_DEFAULT_MODEL"]) {
+      delete process.env[k];
+    }
+    _resetProviderCacheForTests();
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
+
+  function writeConfig(json: unknown): void {
+    const sophronDir = join(home, ".sophron");
+    mkdirSync(sophronDir, { recursive: true });
+    writeFileSync(join(sophronDir, "config.json"), JSON.stringify(json));
+  }
+
+  it("prefers a configured provider instance name before the first colon", () => {
+    writeConfig({
+      providers: [{ name: "ollama", kind: "ollama", baseURL: "http://custom:11434/v1", defaultModel: "custom-model" }],
+    });
+    _resetProviderCacheForTests();
+    // "ollama:qwen3.5:9b" — the configured instance named "ollama" wins over the
+    // kind-prefix fallback.
+    const r = resolveModelSpec("ollama:qwen3.5:9b");
+    expect(r.provider).toBe("ollama");
+    expect(r.model).toBe("qwen3.5:9b");
+  });
+
+  it("falls back to resolveModel for kind prefixes when no instance name matches", () => {
+    process.env["OLLAMA_DEFAULT_MODEL"] = "fallback-model";
+    _resetProviderCacheForTests();
+    const r = resolveModelSpec("ollama:llama3.2:1b");
+    expect(r.provider).toBe("ollama");
+    expect(r.model).toBe("llama3.2:1b");
+    delete process.env["OLLAMA_DEFAULT_MODEL"];
+  });
+
+  it("resolves a named tier through the tier map", () => {
+    writeConfig({ tiers: { frontier: "openrouter:anthropic/claude-sonnet-4" } });
+    _resetProviderCacheForTests();
+    const r = resolveModelSpec("frontier");
+    expect(r.provider).toBe("openrouter");
+    expect(r.model).toBe("anthropic/claude-sonnet-4");
+  });
+
+  it("throws when no provider can resolve the spec", () => {
+    _resetProviderCacheForTests();
+    expect(() => resolveModelSpec("definitely-not-a-tier")).toThrow(/Could not resolve model tier/);
   });
 });
 

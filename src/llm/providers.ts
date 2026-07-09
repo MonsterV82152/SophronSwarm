@@ -440,6 +440,33 @@ export function resolveModelWithProvider(model: string, provider?: ProviderName)
   return resolveModel(model);
 }
 
+/**
+ * Resolve a free-form model specification from an operator command (`/model`,
+ * `--model`) to a concrete (provider, model) pair.
+ *
+ * Resolution order:
+ *   1. If the spec contains a colon and the part before the first colon matches
+ *      a configured provider *instance* name, use that provider and treat the
+ *      rest as the model id. This lets operators target named instances like
+ *      `my-ollama:qwen3.5:9b`.
+ *   2. Otherwise fall back to `resolveModel()`, which handles named tiers
+ *      (`frontier`/`mid`/`cheap`/`inherit`), kind prefixes (`ollama:...`,
+ *      `zai:...`, `openrouter:...`), bare model ids, and tier overrides.
+ *
+ * @throws if the provider instance is unknown or no provider can resolve the
+ *         tier/model.
+ */
+export function resolveModelSpec(spec: string): ModelResolution {
+  const colonIdx = spec.indexOf(":");
+  if (colonIdx > 0) {
+    const maybeProvider = spec.slice(0, colonIdx);
+    if (byNameMap().has(maybeProvider)) {
+      return { provider: maybeProvider, model: spec.slice(colonIdx + 1) };
+    }
+  }
+  return resolveModel(spec);
+}
+
 // ── Mutators (sophron add-provider / remove-provider) ───────────────────────
 
 /** A provider entry as the operator supplies it to `add-provider`. */

@@ -1,0 +1,4 @@
+After viewing and analyzing, I have some questions and issues with the current project.
+1. I want a way to easily change the model of any agent. Currently, orchestrator and architect are ollama models but they should be frontier. Add a /model in any agent chat to change the model of that agent. 
+2. Global orchestrator should HAVE access to past projects (only project name and project overview). Expand on the system message such that it encourages discussion with the operator to map out specifics (project goal, NOT code) and feasibility. It should then give the project overview and goal to the per-project orchestrator for it to map out code specifics.
+3. 

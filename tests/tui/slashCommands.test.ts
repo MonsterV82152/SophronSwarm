@@ -136,6 +136,32 @@ describe("parseSlashCommand — /memory", () => {
   });
 });
 
+describe("parseSlashCommand — /model", () => {
+  it("parses agent + model spec", () => {
+    expect(parseSlashCommand("/model builder frontier")).toEqual({
+      kind: "model",
+      agent: "builder",
+      spec: "frontier",
+    });
+  });
+
+  it("parses agent + provider-prefixed model", () => {
+    expect(parseSlashCommand("/model builder openrouter:anthropic/claude-sonnet-4")).toEqual({
+      kind: "model",
+      agent: "builder",
+      spec: "openrouter:anthropic/claude-sonnet-4",
+    });
+  });
+
+  it("parses a bare model spec (context determines agent)", () => {
+    expect(parseSlashCommand("/model frontier")).toEqual({ kind: "model", spec: "frontier" });
+  });
+
+  it("rejects missing spec", () => {
+    expect(parseSlashCommand("/model")).toMatchObject({ kind: "unknown", reason: /requires/ });
+  });
+});
+
 describe("parseSlashCommand — unknown commands", () => {
   it("returns unknown for an unrecognized command", () => {
     expect(parseSlashCommand("/bogus")).toMatchObject({ kind: "unknown", reason: /unknown command/ });

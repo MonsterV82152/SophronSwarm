@@ -19,11 +19,13 @@ import { formatTokens, readRunDetail, type RunDetail, type DashboardModel } from
 export interface AgentDetailProps {
   model: DashboardModel;
   agentName: string;
+  /** Effective model override for this agent, if any. */
+  effectiveModel?: string;
 }
 
 const REFRESH_MS = 500;
 
-export function AgentDetail({ model, agentName }: AgentDetailProps) {
+export function AgentDetail({ model, agentName, effectiveModel }: AgentDetailProps) {
   const agent = model.agents.find((a) => a.name === agentName);
 
   // ── Live stream: re-read the agent's most recent run on an interval ──
@@ -70,7 +72,10 @@ export function AgentDetail({ model, agentName }: AgentDetailProps) {
             <Text>
               {"  "}
               <Text dimColor>model: </Text>
-              {agent.model}
+              {effectiveModel ?? agent.model}
+              {effectiveModel && effectiveModel !== agent.model ? (
+                <Text color="yellow"> (override)</Text>
+              ) : null}
             </Text>
           </Box>
           <Box marginBottom={1}>

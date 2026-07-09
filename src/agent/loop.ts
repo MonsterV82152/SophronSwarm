@@ -27,6 +27,7 @@ import { promoteTool, recordPromotionCosts } from "../mcp/promotion.js";
 import {
   addUsage, EMPTY_USAGE,
   type AgentDefinition, type AgentRunState, type DelegationContext, type LLMMessage,
+  type ModelOverride,
 } from "../types.js";
 
 export const DEFAULT_MAX_TURNS = 32;
@@ -44,6 +45,8 @@ export interface RunOptions {
   delegationCtx?: DelegationContext;
   /** Override the default max-turns cap. */
   maxTurns?: number;
+  /** Runtime model override (e.g. from `/model` or `--model`). */
+  modelOverride?: ModelOverride;
 }
 
 function initRunState(
@@ -114,7 +117,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   recorder.openForRun(state.runId);
   recorder.recordRunStart(state);
   checkpointer.save(state);
-  log.info({ agent: agent.name, runId: state.runId, model: agent.model, maxTurns }, "run start");
+  const effectiveModel = opts.modelOverride?.model ?? agent.model;
+  log.info({ agent: agent.name, runId: state.runId, model: effectiveModel, maxTurns }, "run start");
 
   try {
     for (state.turn = 0; state.turn < maxTurns; state.turn++) {
@@ -122,7 +126,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
 
       // ── 1. Call the model (transient errors retried inside the client) ────
       const tools = toolDefsFor(dispatcher.registry, agent, state);
-      const response = await llm.complete({ model: agent.model, provider: agent.provider, messages, tools });
+      const effectiveModel = opts.modelOverride?.model ?? agent.model;
+      const effectiveProvider = opts.modelOverride?.provider ?? agent.provider;
+      const response = await llm.complete({ model: effectiveModel, provider: effectiveProvider, messages, tools });
       state.tokenUsage = addUsage(state.tokenUsage, response.usage);
       recorder.record({
         type: "llm_response",

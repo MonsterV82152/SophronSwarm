@@ -354,4 +354,11 @@ describe("AgentDetail", () => {
     const { lastFrame } = render(<AgentDetail model={makeModel()} agentName="ghost" />);
     expect(lastFrame() ?? "").toContain("agent not found");
   });
+
+  it("shows the effective model when an override is provided", () => {
+    const { lastFrame } = render(<AgentDetail model={makeModel()} agentName="builder" effectiveModel="openrouter:anthropic/claude-sonnet-4" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("openrouter:anthropic/claude-sonnet-4");
+    expect(frame).toContain("override");
+  });
 });
