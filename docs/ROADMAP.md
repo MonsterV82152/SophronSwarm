@@ -4,12 +4,13 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-08):** 669/669 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-08):** 686/686 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
 > + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
 > (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer) +
 > M8 (wire global orchestrator into Home) + M10 (operator ergonomics) + M11
-> (runtime `/model` switching) + M12 (global orchestrator project context) complete.
+> (runtime `/model` switching) + M12 (global orchestrator project context) +
+> M13 (provider descriptions) complete.
 >
 > **Last updated:** 2026-07-08 (M12 complete)
 
@@ -74,7 +75,7 @@ SophronSwarm (global)                          ← operator's home
 | **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
 | **M11 — Runtime Model Switching (`/model`)** | ✅ Complete | runtime model override + `/model` slash command + default orchestrator/architect/global-orchestrator to `frontier`; 12 new tests |
 | **M12 — Global Orchestrator Project Context** | ✅ Complete | `read_project_overview` tool + goal/constraints in proposal/creation + richer discovery/handoff prompt; 7 new tests |
-| **M13 — Provider Descriptions** | 🔜 Planned | Small — `description` field on provider instances surfaced to the architect via `list_providers` |
+| **M13 — Provider Descriptions** | ✅ Complete | `description` field on provider instances + CLI flags + surfaced in `list_providers`; 5 new tests |
 | **M14 — TUI Surface-Switch Render Cleanup** | 🔜 Planned | Small–Medium — eliminate visual artifacts when switching between Home and Project surfaces |
 
 ---
@@ -416,22 +417,25 @@ produce clearer, goal-driven handoffs to per-project orchestrators.
 
 ---
 
-### M13 — Provider Descriptions 🔜
+### M13 — Provider Descriptions ✅
 **Size:** Small  
-**Why now:** with named provider instances, the architect needs human-readable
-hints about what each provider is for and what it can do.
+**Built (2026-07-08):** provider instances can carry operator-provided
+descriptions, and the architect prompt instructs using them.
 
 **Scope:**
-- Add `description?: string` to `ProviderConfig`, `RawProviderEntry`,
+- Added `description?: string` to `ProviderConfig`, `RawProviderEntry`,
   `AddProviderInput`, and `ProviderPatch`.
-- Preserve the field through `applyKindDefaults`, config migration, and the
-  `addProviderInstance`/`updateProviderInstance` read-modify-write flow.
-- Add `--description` to `sophron add-provider` and `sophron edit-provider`.
-- Update the `list_providers` tool output to include each provider's
+- Preserved the field through `applyKindDefaults`, legacy config migration,
+  and the `addProviderInstance`/`updateProviderInstance` read-modify-write flow.
+- Added `--description <text>` to `sophron add-provider` and
+  `sophron edit-provider`, plus `--clear-description` for edit-provider.
+- Updated the `list_providers` tool output to include each provider's
   description.
-- Update the `GLOBAL_ARCHITECT` prompt to instruct the architect to read
+- Updated the `GLOBAL_ARCHITECT` prompt to instruct the architect to read
   provider descriptions when choosing models.
-- Tests: config round-trip, CLI flag handling, tool output formatting.
+- 5 new tests: description persistence on add, set/clear on edit, raw entry
+  round-trip, config load round-trip, `list_providers` output, and prompt
+  assertion.
 
 **Delivers:** every provider instance can carry an operator-provided
 description, and the architect uses it when assigning models.
@@ -487,8 +491,8 @@ M9 (web UI) ── optional / parallel / deferred
 
 ## Starting point
 
-M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, and
-**M12 (global-orchestrator project context)** are ✅ complete. The next batch is
-**M13–M14**: provider descriptions and TUI render cleanup. **M9 (web UI)** remains
-deferred (CLI-first is locked) and can be picked up in parallel by a separate
-effort.
+M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, **M12
+(global-orchestrator project context)**, and **M13 (provider descriptions)** are
+✅ complete. The remaining milestone is **M14**: TUI surface-switch render cleanup.
+**M9 (web UI)** remains deferred (CLI-first is locked) and can be picked up in
+parallel by a separate effort.

@@ -327,7 +327,8 @@ export const list_providers: ToolSpec = {
     for (const p of providers) {
       const creds = p.apiKey ? "key set" : p.kind === "ollama" ? "(no key needed)" : "NO KEY";
       const model = p.defaultModel ?? "(no default model)";
-      lines.push(`- ${p.name} [${p.kind}]  ${p.baseURL}  ${creds}  default: ${model}`);
+      const desc = p.description ? `  description: ${p.description}` : "";
+      lines.push(`- ${p.name} [${p.kind}]  ${p.baseURL}  ${creds}  default: ${model}${desc}`);
     }
     lines.push("");
     lines.push(

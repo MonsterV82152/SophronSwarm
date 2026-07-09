@@ -419,6 +419,23 @@ describe("addProviderInstance", () => {
     expect(cfg.providers[0]!.default).toBe(true);
   });
 
+  it("persists a description", () => {
+    const stored = addProviderInstance({
+      name: "described",
+      kind: "ollama",
+      baseURL: "http://host:11434/v1",
+      description: "Local reasoning model on the workstation",
+    });
+    expect(stored.description).toBe("Local reasoning model on the workstation");
+    const cfg = readConfigFile() as { providers: { name: string; description?: string }[] };
+    expect(cfg.providers[0]!.description).toBe("Local reasoning model on the workstation");
+  });
+
+  it("drops an empty description", () => {
+    const stored = addProviderInstance({ name: "no-desc", kind: "ollama", description: "   " });
+    expect(stored).not.toHaveProperty("description");
+  });
+
   it("resets the in-process cache so listProviders reflects the write", () => {
     const before = listProviders().map((p) => p.name);
     expect(before).not.toContain("fresh-instance");
@@ -493,6 +510,12 @@ describe("getRawProviderEntry", () => {
     expect(raw).toBeDefined();
     expect(raw!.apiKey).toBe("${OPENROUTER_API_KEY}"); // NOT expanded
     expect(raw!.defaultModel).toBe("claude-sonnet-4");
+  });
+
+  it("returns the raw description", () => {
+    addProviderInstance({ name: "or-desc", kind: "openrouter", description: "Cloud provider for frontier reasoning" });
+    const raw = getRawProviderEntry("or-desc");
+    expect(raw!.description).toBe("Cloud provider for frontier reasoning");
   });
 
   it("returns undefined for a built-in with no config entry", () => {
@@ -669,5 +692,25 @@ describe("updateProviderInstance", () => {
     expect(stored.apiKey).toBe("new-key");
     expect(stored.defaultModel).toBe("new-model");
     expect(stored.default).toBe(true);
+  });
+
+  it("sets a description", () => {
+    addProviderInstance({ name: "set-desc", kind: "ollama" });
+    const stored = updateProviderInstance("set-desc", { description: "Fast local model for cheap tasks" });
+    expect(stored.description).toBe("Fast local model for cheap tasks");
+  });
+
+  it("clears a description when given an empty string", () => {
+    addProviderInstance({ name: "clear-desc", kind: "ollama", description: "will be removed" });
+    const stored = updateProviderInstance("clear-desc", { description: "" });
+    expect(stored).not.toHaveProperty("description");
+  });
+
+  it("round-trips description through config load", () => {
+    addProviderInstance({ name: "roundtrip", kind: "openrouter", description: "Round-trip description" });
+    _resetProviderCacheForTests();
+    const loaded = getProvider("roundtrip");
+    expect(loaded.description).toBe("Round-trip description");
+    expect(listProviders().find((p) => p.name === "roundtrip")?.description).toBe("Round-trip description");
   });
 });

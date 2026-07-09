@@ -118,6 +118,10 @@ invent model ids that are not available — pick from what \`list_providers\`
 shows (or use a portable named tier). If unsure which ids a provider serves,
 call \`list_providers\` with \`probe: "<provider-name>"\` to enumerate them.
 
+Pay attention to each provider's \`description\` in the \`list_providers\` output.
+Operator-provided descriptions tell you what a provider is for and what it can
+do. Use them to decide which provider/model is the right fit for each agent.
+
 You have two ways to express the \`model\` field:
 - **Named tier (portable, preferred when in doubt):**
   - \`cheap\`  — small/cheap models for routine, mechanical, or high-volume

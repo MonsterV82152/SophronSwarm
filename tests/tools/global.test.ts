@@ -330,4 +330,12 @@ describe("list_providers", () => {
     const out = await callAsync(list_providers);
     expect(out).not.toMatch(/Probing/);
   });
+
+  it("includes provider descriptions when present", async () => {
+    addProviderInstance({ name: "described-ollama", kind: "ollama", baseURL: "http://host:11434/v1", description: "Local reasoning box" });
+    _resetProviderCacheForTests();
+    const out = await callAsync(list_providers);
+    expect(out).toContain("described-ollama");
+    expect(out).toContain("description: Local reasoning box");
+  });
 });

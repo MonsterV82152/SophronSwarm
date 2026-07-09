@@ -316,6 +316,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--base-url <url>", "OpenAI-compatible base URL")
     .option("--api-key <key>", "API key (or a ${ENV_VAR} reference)")
     .option("-m, --model <id>", "default model id")
+    .option("--description <text>", "human-readable description of this provider")
     .option("--default", "mark this instance as the default for its kind")
     .option("--replace", "overwrite an existing instance with the same name")
     .action(async (opts: {
@@ -324,6 +325,7 @@ export async function runCli(argv: string[]): Promise<void> {
       baseUrl?: string;
       apiKey?: string;
       model?: string;
+      description?: string;
       default?: boolean;
       replace?: boolean;
     }) => {
@@ -385,17 +387,21 @@ export async function runCli(argv: string[]): Promise<void> {
       const defaultModel = opts.model ??
         (nonInteractive ? undefined : (await prompt("Default model id (optional, e.g. qwen3.5:9b)")) || undefined);
 
+      const description = opts.description ??
+        (nonInteractive ? undefined : (await prompt("Description (optional, e.g. 'local reasoning model on laptop')")) || undefined);
+
       const markDefault = opts.default ?? (nonInteractive ? false : await promptConfirm("Mark as the default instance for this kind?", false));
 
       // ── Write it ───────────────────────────────────────────────────────
       try {
         const stored = addProviderInstance(
-          { name, kind, baseURL: baseURL || undefined, apiKey, defaultModel, default: markDefault },
+          { name, kind, baseURL: baseURL || undefined, apiKey, defaultModel, description, default: markDefault },
           { replace: opts.replace },
         );
         console.log(chalk.green(`✓ Added provider '${stored.name}' (${stored.kind}) → ${configPath()}`));
         const creds = apiKey ? chalk.green("key set") : chalk.gray("no key");
         console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${creds}  ${stored.defaultModel ?? "(no default model)"}`));
+        if (stored.description) console.log(chalk.gray(`  ${stored.description}`));
         console.log(chalk.gray(`  Test it with: sophron providers ${stored.name}`));
       } catch (e) {
         console.error(chalk.red(`Could not add provider: ${(e as Error).message}`));
@@ -422,18 +428,22 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--base-url <url>", "new base URL")
     .option("--api-key <key>", "new API key (or a ${ENV_VAR} reference; use --clear-key to remove)")
     .option("-m, --model <id>", "new default model id (use --clear-model to remove)")
+    .option("--description <text>", "new human-readable description (use --clear-description to remove)")
     .option("--default", "mark this instance as the default for its kind")
     .option("--no-default", "remove the default-for-kind flag")
     .option("--clear-key", "remove the API key from this instance")
     .option("--clear-model", "remove the default model from this instance")
+    .option("--clear-description", "remove the description from this instance")
     .action(async (name: string, opts: {
       baseUrl?: string;
       apiKey?: string;
       model?: string;
+      description?: string;
       default?: boolean;
       noDefault?: boolean;
       clearKey?: boolean;
       clearModel?: boolean;
+      clearDescription?: boolean;
     }) => {
       // ── Resolve the current entry (raw if it exists, else resolved built-in) ──
       const raw = getRawProviderEntry(name);
@@ -453,23 +463,27 @@ export async function runCli(argv: string[]): Promise<void> {
       console.log(chalk.gray(`  base URL:      ${raw?.baseURL ?? current.baseURL}`));
       console.log(chalk.gray(`  api key:       ${raw?.apiKey ? maskKey(raw.apiKey) + " (raw)" : keyDisplay}`));
       console.log(chalk.gray(`  default model: ${raw?.defaultModel ?? current.defaultModel ?? chalk.gray("(none)")}`));
+      console.log(chalk.gray(`  description:   ${raw?.description ?? current.description ?? chalk.gray("(none)")}`));
       console.log();
 
       // ── Detect mode: non-interactive if any field flag is given OR !TTY ──
       const hasFieldFlag = Boolean(
         opts.baseUrl !== undefined || opts.apiKey !== undefined || opts.model !== undefined ||
-        opts.default !== undefined || opts.noDefault || opts.clearKey || opts.clearModel,
+        opts.description !== undefined || opts.default !== undefined || opts.noDefault ||
+        opts.clearKey || opts.clearModel || opts.clearDescription,
       );
       const nonInteractive = hasFieldFlag || !process.stdin.isTTY;
 
       // ── Build the patch ────────────────────────────────────────────────
-      const patch: { baseURL?: string; apiKey?: string; defaultModel?: string; default?: boolean } = {};
+      const patch: { baseURL?: string; apiKey?: string; defaultModel?: string; description?: string; default?: boolean } = {};
 
       if (nonInteractive) {
         if (opts.clearKey) patch.apiKey = "";
         else if (opts.apiKey !== undefined) patch.apiKey = opts.apiKey;
         if (opts.clearModel) patch.defaultModel = "";
         else if (opts.model !== undefined) patch.defaultModel = opts.model;
+        if (opts.clearDescription) patch.description = "";
+        else if (opts.description !== undefined) patch.description = opts.description;
         if (opts.baseUrl !== undefined) patch.baseURL = opts.baseUrl;
         if (opts.default === false || opts.noDefault) patch.default = false;
         else if (opts.default === true) patch.default = true;
@@ -486,6 +500,10 @@ export async function runCli(argv: string[]): Promise<void> {
         const curModel = raw?.defaultModel ?? current.defaultModel ?? "";
         const modelAns = await prompt("Default model id", { default: curModel });
         if (curModel !== modelAns) patch.defaultModel = modelAns;
+
+        const curDescription = raw?.description ?? current.description ?? "";
+        const descriptionAns = await prompt("Description", { default: curDescription });
+        if (curDescription !== descriptionAns) patch.description = descriptionAns;
 
         const curDefault = Boolean(raw?.default);
         const wantDefault = await promptConfirm("Mark as the default instance for this kind?", curDefault);

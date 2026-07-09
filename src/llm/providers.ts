@@ -65,6 +65,8 @@ export interface ProviderConfig {
   baseURL: string;
   apiKey: string | null;
   defaultModel: string | null;
+  /** Human-readable hint about what this provider is for / what it can do. */
+  description?: string;
 }
 
 export interface ModelResolution {
@@ -84,6 +86,8 @@ export interface RawProviderEntry {
   defaultModel?: string;
   /** Mark this as the default instance for its kind (prefix shortcuts target it). */
   default?: boolean;
+  /** Human-readable hint about what this provider is for / what it can do. */
+  description?: string;
 }
 
 interface OperatorConfig {
@@ -146,9 +150,12 @@ function builtinDefaults(): ProviderConfig[] {
  */
 function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: string }): Omit<ProviderConfig, "name"> {
   const kind = (entry.kind ?? "openai-compat") as ProviderKind;
+  const description = entry.description ? expandEnv(entry.description.trim()) : undefined;
+  const base = { description };
   switch (kind) {
     case "openrouter":
       return {
+        ...base,
         kind,
         baseURL: entry.baseURL ? expandEnv(entry.baseURL) : "https://openrouter.ai/api/v1",
         apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : (process.env["OPENROUTER_API_KEY"] ?? null),
@@ -156,6 +163,7 @@ function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: stri
       };
     case "ollama":
       return {
+        ...base,
         kind,
         baseURL: entry.baseURL ? expandEnv(entry.baseURL) : (process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1"),
         apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : (process.env["OLLAMA_API_KEY"] ?? "ollama"),
@@ -163,6 +171,7 @@ function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: stri
       };
     case "zai":
       return {
+        ...base,
         kind,
         baseURL: entry.baseURL ? expandEnv(entry.baseURL) : "https://api.z.ai/api/coding/paas/v4",
         apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : (process.env["ZAI_API_KEY"] ?? null),
@@ -171,6 +180,7 @@ function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: stri
     case "openai-compat":
     default:
       return {
+        ...base,
         kind: "openai-compat",
         baseURL: expandEnv(entry.baseURL ?? ""),
         apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : null,
@@ -478,6 +488,8 @@ export interface AddProviderInput {
   defaultModel?: string;
   /** Mark as the default instance for its kind (prefix shortcuts target it). */
   default?: boolean;
+  /** Human-readable hint about what this provider is for / what it can do. */
+  description?: string;
 }
 
 /**
@@ -506,6 +518,7 @@ export function addProviderInstance(input: AddProviderInput, opts: { replace?: b
   if (input.baseURL && input.baseURL.trim()) entry.baseURL = input.baseURL.trim();
   if (input.apiKey && input.apiKey.trim()) entry.apiKey = input.apiKey.trim();
   if (input.defaultModel && input.defaultModel.trim()) entry.defaultModel = input.defaultModel.trim();
+  if (input.description && input.description.trim()) entry.description = input.description.trim();
   if (input.default) entry.default = true;
 
   // Normalize providers to the array form.
@@ -570,6 +583,8 @@ export interface ProviderPatch {
   apiKey?: string;
   defaultModel?: string;
   default?: boolean;
+  /** Human-readable hint about what this provider is for / what it can do. */
+  description?: string;
 }
 
 /**
@@ -605,6 +620,11 @@ function applyPatchToEntry(entry: RawProviderEntry, patch: ProviderPatch): void 
   if (patch.default !== undefined) {
     if (patch.default) entry.default = true;
     else delete entry.default;
+  }
+  if (patch.description !== undefined) {
+    const v = patch.description.trim();
+    if (v) entry.description = v;
+    else delete entry.description;
   }
 }
 
@@ -658,6 +678,7 @@ export function updateProviderInstance(name: string, patch: ProviderPatch): RawP
     if (resolved.baseURL) entry.baseURL = resolved.baseURL;
     if (resolved.apiKey) entry.apiKey = resolved.apiKey;
     if (resolved.defaultModel) entry.defaultModel = resolved.defaultModel;
+    if (resolved.description) entry.description = resolved.description;
     applyPatchToEntry(entry, patch);
     arr.push(entry);
   }

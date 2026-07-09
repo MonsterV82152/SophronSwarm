@@ -235,6 +235,11 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     expect(GLOBAL_ARCHITECT).toMatch(/match the model to the task size/i);
   });
 
+  it("global architect reads provider descriptions when choosing models (M13)", () => {
+    expect(GLOBAL_ARCHITECT).toMatch(/description/i);
+    expect(GLOBAL_ARCHITECT).toMatch(/list_providers/i);
+  });
+
   it("standard orchestrator defaults to frontier", () => {
     expect(STANDARD_ORCHESTRATOR).toMatch(/model:\s*frontier/);
   });
