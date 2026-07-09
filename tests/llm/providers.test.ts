@@ -291,27 +291,17 @@ describe("resolveModel", () => {
     expect(r.model).toBe("anthropic/claude-sonnet-4");
   });
 
-  it("inherit → fallback to first instance with a defaultModel (ollama if OLLAMA_DEFAULT_MODEL set)", () => {
+  it("bare model id → fallback to first instance with a defaultModel", () => {
     process.env["OLLAMA_DEFAULT_MODEL"] = "qwen3.5:9b";
     _resetProviderCacheForTests();
-    const r = resolveModel("inherit");
+    const r = resolveModel("any-model-id");
     expect(r.model).toBe("qwen3.5:9b");
   });
 
-  it("tier override → resolves through the tier map", () => {
-    // We can't easily set a tier map without a config file, so test the path
-    // indirectly: a bare model id with no creds anywhere should fall to the
-    // error path. Set OLLAMA_DEFAULT_MODEL so there IS a fallback.
-    process.env["OLLAMA_DEFAULT_MODEL"] = "fallback-model";
-    _resetProviderCacheForTests();
-    const r = resolveModel("some-unknown-tier");
-    expect(r.model).toBe("fallback-model");
-  });
-
-  it("throws when no provider can resolve the tier", () => {
+  it("throws when no provider can resolve the model", () => {
     // No env defaults, no config → nothing resolves.
     _resetProviderCacheForTests();
-    expect(() => resolveModel("inherit")).toThrow(/Could not resolve model tier/);
+    expect(() => resolveModel("any-model-id")).toThrow(/Could not resolve model/);
   });
 });
 
@@ -357,7 +347,7 @@ describe("resolveModelWithProvider", () => {
   it("falls back to resolveModel when no provider given", () => {
     process.env["OLLAMA_DEFAULT_MODEL"] = "fb-model";
     _resetProviderCacheForTests();
-    const r = resolveModelWithProvider("inherit");
+    const r = resolveModelWithProvider("any-model-id");
     expect(r.model).toBe("fb-model");
   });
 });
@@ -620,17 +610,18 @@ describe("resolveModelSpec", () => {
     delete process.env["OLLAMA_DEFAULT_MODEL"];
   });
 
-  it("resolves a named tier through the tier map", () => {
-    writeConfig({ tiers: { frontier: "openrouter:anthropic/claude-sonnet-4" } });
+  it("resolves a bare model id through provider defaults", () => {
+    process.env["OLLAMA_DEFAULT_MODEL"] = "fallback-model";
     _resetProviderCacheForTests();
-    const r = resolveModelSpec("frontier");
-    expect(r.provider).toBe("openrouter");
-    expect(r.model).toBe("anthropic/claude-sonnet-4");
+    const r = resolveModelSpec("my-model");
+    expect(r.provider).toBe("ollama");
+    expect(r.model).toBe("fallback-model");
+    delete process.env["OLLAMA_DEFAULT_MODEL"];
   });
 
   it("throws when no provider can resolve the spec", () => {
     _resetProviderCacheForTests();
-    expect(() => resolveModelSpec("definitely-not-a-tier")).toThrow(/Could not resolve model tier/);
+    expect(() => resolveModelSpec("definitely-not-configured")).toThrow(/Could not resolve model/);
   });
 });
 

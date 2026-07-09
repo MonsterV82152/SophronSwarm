@@ -37,13 +37,13 @@ import type { SharedServices } from "../tools/schema.js";
  * The caller is responsible for calling closeServices() when done (or before
  * rebuilding on a project switch).
  */
-export function buildServices(workingDir: string, registry: AgentRegistry): SharedServices {
+export function buildServices(workingDir: string, registry: AgentRegistry, approvals?: ApprovalsQueue): SharedServices {
   const toolRegistry = new ToolRegistry();
   for (const t of BUILTIN_TOOLS) toolRegistry.register(t);
   const llm = new LLMClient();
-  const approvals = new ApprovalsQueue();
+  const approvalsQueue = approvals ?? new ApprovalsQueue();
   const classifier = new LlmAutoModeClassifier(llm);
-  const dispatcher = new ToolDispatcher(toolRegistry, new AutoPermissionGate(classifier, approvals));
+  const dispatcher = new ToolDispatcher(toolRegistry, new AutoPermissionGate(classifier, approvalsQueue));
   const checkpointer = new Checkpointer(resolve(workingDir, ".sophron", "checkpoint.db"));
   const sharedMemoryStore = new SharedMemoryStore(resolve(workingDir, SHARED_DIR_NAME));
   const agentMemoryStore = new AgentMemoryStore(resolve(workingDir, AGENT_MEMORY_DIR_NAME));
@@ -68,7 +68,7 @@ export function buildServices(workingDir: string, registry: AgentRegistry): Shar
     mcpPool,
     mcpCatalog,
     mcpCostMeter,
-    approvals,
+    approvals: approvalsQueue,
     purifier,
   };
 }
@@ -97,7 +97,7 @@ export async function switchServices(
   newWorkingDir: string,
 ): Promise<{ services: SharedServices; registry: AgentRegistry }> {
   await closeServices(oldServices, oldRegistry);
-  const registry = new AgentRegistry();
+  const registry = new AgentRegistry(newWorkingDir);
   registry.scan();
   registry.startWatch();
   const services = buildServices(newWorkingDir, registry);

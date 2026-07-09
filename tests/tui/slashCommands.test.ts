@@ -51,6 +51,18 @@ describe("parseSlashCommand — simple commands", () => {
     expect(parseSlashCommand("/quit")).toEqual({ kind: "quit" });
     expect(parseSlashCommand("/exit")).toEqual({ kind: "quit" });
   });
+
+  it("parses /new and /chats", () => {
+    expect(parseSlashCommand("/new")).toEqual({ kind: "new" });
+    expect(parseSlashCommand("/chats")).toEqual({ kind: "chats" });
+  });
+
+  it("parses /switch and /chat", () => {
+    expect(parseSlashCommand("/switch my-project")).toEqual({ kind: "switch", project: "my-project" });
+    expect(parseSlashCommand("/s my-project")).toEqual({ kind: "switch", project: "my-project" });
+    expect(parseSlashCommand("/chat my-project")).toEqual({ kind: "chat", project: "my-project" });
+    expect(parseSlashCommand("/chat")).toEqual({ kind: "chat" });
+  });
 });
 
 describe("parseSlashCommand — /runs with optional limit", () => {
@@ -84,12 +96,25 @@ describe("parseSlashCommand — /run with agent + task", () => {
     });
   });
 
+  it("parses project/agent + quoted task", () => {
+    expect(parseSlashCommand('/run my-app/builder "scaffold a project"')).toEqual({
+      kind: "run",
+      project: "my-app",
+      agent: "builder",
+      task: "scaffold a project",
+    });
+  });
+
   it("returns unknown when missing the task", () => {
     expect(parseSlashCommand("/run builder")).toMatchObject({ kind: "unknown", reason: /requires/ });
   });
 
   it("returns unknown when missing both args", () => {
     expect(parseSlashCommand("/run")).toMatchObject({ kind: "unknown" });
+  });
+
+  it("returns unknown for malformed project/agent", () => {
+    expect(parseSlashCommand("/run /agent do thing")).toMatchObject({ kind: "unknown", reason: /both project and agent/ });
   });
 });
 
@@ -162,6 +187,60 @@ describe("parseSlashCommand — /model", () => {
   });
 });
 
+describe("parseSlashCommand — draft commands", () => {
+  it("parses /drafts", () => {
+    expect(parseSlashCommand("/drafts")).toEqual({ kind: "drafts" });
+  });
+
+  it("parses /approve-draft with project + agent", () => {
+    expect(parseSlashCommand("/approve-draft my-app builder")).toEqual({
+      kind: "approveDraft",
+      project: "my-app",
+      name: "builder",
+    });
+  });
+
+  it("parses /ad alias", () => {
+    expect(parseSlashCommand("/ad my-app builder")).toEqual({
+      kind: "approveDraft",
+      project: "my-app",
+      name: "builder",
+    });
+  });
+
+  it("parses /reject-draft with project + agent", () => {
+    expect(parseSlashCommand("/reject-draft my-app builder")).toEqual({
+      kind: "rejectDraft",
+      project: "my-app",
+      name: "builder",
+    });
+  });
+
+  it("parses /rd alias", () => {
+    expect(parseSlashCommand("/rd my-app builder")).toEqual({
+      kind: "rejectDraft",
+      project: "my-app",
+      name: "builder",
+    });
+  });
+
+  it("parses /approve-all-drafts without project", () => {
+    expect(parseSlashCommand("/approve-all-drafts")).toEqual({ kind: "approveAllDrafts", project: undefined });
+  });
+
+  it("parses /approve-all-drafts with project", () => {
+    expect(parseSlashCommand("/approve-all-drafts my-app")).toEqual({ kind: "approveAllDrafts", project: "my-app" });
+  });
+
+  it("parses /reject-all-drafts with project", () => {
+    expect(parseSlashCommand("/reject-all-drafts my-app")).toEqual({ kind: "rejectAllDrafts", project: "my-app" });
+  });
+
+  it("rejects /approve-draft missing args", () => {
+    expect(parseSlashCommand("/approve-draft my-app")).toMatchObject({ kind: "unknown", reason: /requires/ });
+  });
+});
+
 describe("parseSlashCommand — unknown commands", () => {
   it("returns unknown for an unrecognized command", () => {
     expect(parseSlashCommand("/bogus")).toMatchObject({ kind: "unknown", reason: /unknown command/ });
@@ -174,5 +253,9 @@ describe("HELP_TEXT", () => {
     expect(HELP_TEXT).toContain("/run");
     expect(HELP_TEXT).toContain("/cost");
     expect(HELP_TEXT).toContain("/help");
+    expect(HELP_TEXT).toContain("/new");
+    expect(HELP_TEXT).toContain("/chats");
+    expect(HELP_TEXT).toContain("/switch");
+    expect(HELP_TEXT).toContain("/chat");
   });
 });

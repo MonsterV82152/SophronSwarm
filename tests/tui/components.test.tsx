@@ -14,6 +14,7 @@ import { InputBar } from "../../src/tui/components/InputBar.js";
 import { Banner } from "../../src/tui/components/Banner.js";
 import { OverviewTab } from "../../src/tui/components/OverviewTab.js";
 import { OrchestratorChat, type ChatMessage } from "../../src/tui/components/OrchestratorChat.js";
+import { type ChatThread } from "../../src/tui/chat.js";
 import { ProjectsTab } from "../../src/tui/components/ProjectsTab.js";
 import {
   StatusTab,
@@ -51,6 +52,7 @@ function makeOverview(overrides: Partial<OverviewModel> = {}): OverviewModel {
     failedRuns: 0,
     needingAttention: [],
     activeApprovalsPending: 0,
+    totalDraftsPending: 0,
     ...overrides,
   };
 }
@@ -227,20 +229,92 @@ describe("OrchestratorChat", () => {
     );
     expect(lastFrame() ?? "").toContain("No messages yet");
   });
+
+  it("renders the thread list in list mode", () => {
+    const threads: ChatThread[] = [
+      { id: "t1", title: "First chat", createdAt: 1, updatedAt: 2 },
+      { id: "t2", title: "Second chat", createdAt: 3, updatedAt: 4 },
+    ];
+    const { lastFrame } = render(
+      <OrchestratorChat mode="list" threads={threads} selectedThreadIndex={1} installed={true} />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("select a chat thread");
+    expect(frame).toContain("First chat");
+    expect(frame).toContain("Second chat");
+    expect(frame).toContain("❯");
+  });
+
+  it("shows the active thread title in chat mode", () => {
+    const { lastFrame } = render(
+      <OrchestratorChat
+        mode="chat"
+        messages={sampleMessages}
+        running={false}
+        installed={true}
+        currentTitle="Planning CLI"
+      />,
+    );
+    expect(lastFrame() ?? "").toContain("Planning CLI");
+  });
+
+  it("clips older messages to the fixed viewport and shows an overflow hint", () => {
+    const messages: ChatMessage[] = [
+      { id: 1, role: "user", text: "one" },
+      { id: 2, role: "orchestrator", text: "two" },
+      { id: 3, role: "user", text: "three" },
+      { id: 4, role: "orchestrator", text: "four" },
+    ];
+    const { lastFrame } = render(
+      <OrchestratorChat messages={messages} running={false} installed={true} maxLines={3} width={30} />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("older messages above");
+    expect(frame).toContain("four");
+    expect(frame).toContain("three");
+    expect(frame).not.toContain("two");
+    expect(frame).not.toContain("one");
+  });
+
+  it("wraps and truncates a single long message to the viewport", () => {
+    const text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".repeat(4); // 104 chars
+    const firstChunk = text.slice(0, 20);
+    const messages: ChatMessage[] = [{ id: 1, role: "orchestrator", text }];
+    const { lastFrame } = render(
+      <OrchestratorChat messages={messages} running={false} installed={true} maxLines={3} width={30} />,
+    );
+    const frame = lastFrame() ?? "";
+    // The head of the wrapped message should be clipped off the top.
+    expect(frame).not.toContain(firstChunk);
+    // The very end of the message is still visible at the bottom.
+    expect(frame).toContain("WXYZ");
+  });
 });
 
 describe("ProjectsTab", () => {
   it("lists registered projects", () => {
     const projects = [makeProject({ name: "alpha", path: "/x/alpha" }), makeProject({ name: "beta", path: "/x/beta" })];
-    const { lastFrame } = render(<ProjectsTab projects={projects} selectedIndex={0} activePath="/x/alpha" />);
+    const { lastFrame } = render(<ProjectsTab projects={projects} selectedIndex={0} activePath="/x/alpha" draftCounts={new Map()} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("alpha");
     expect(frame).toContain("beta");
     expect(frame).toContain("(active)");
   });
 
+  it("shows pending draft counts per project", () => {
+    const projects = [makeProject({ name: "alpha", path: "/x/alpha" }), makeProject({ name: "beta", path: "/x/beta" })];
+    const draftCounts = new Map<string, number>([
+      ["/x/alpha", 2],
+      ["/x/beta", 0],
+    ]);
+    const { lastFrame } = render(<ProjectsTab projects={projects} selectedIndex={0} activePath="" draftCounts={draftCounts} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("alpha");
+    expect(frame).toContain("2 draft(s) pending");
+  });
+
   it("shows empty hint when no projects", () => {
-    const { lastFrame } = render(<ProjectsTab projects={[]} selectedIndex={0} activePath="" />);
+    const { lastFrame } = render(<ProjectsTab projects={[]} selectedIndex={0} activePath="" draftCounts={new Map()} />);
     expect(lastFrame() ?? "").toContain("no projects registered");
   });
 });

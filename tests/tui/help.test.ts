@@ -12,7 +12,9 @@ const ALL_VIEWS: HelpView[] = [
   "home:overview",
   "home:orchestrator",
   "home:projects",
+  "home:drafts",
   "project:status",
+  "project:chat",
   "project:agents",
   "project:agentDetail",
   "project:runs",
@@ -77,10 +79,25 @@ describe("helpForView — per-view sections", () => {
     expect(text).toContain("switches workspace");
   });
 
+  it("home:drafts shows ↑/↓ + Enter to approve + R to reject", () => {
+    const text = helpForView("home:drafts");
+    expect(text).toContain("Drafts");
+    expect(text).toContain("Enter to approve");
+    expect(text).toContain("R to reject");
+  });
+
   it("project:status mentions health/approvals", () => {
     const text = helpForView("project:status");
     expect(text).toContain("Status");
     expect(text).toContain("approvals");
+  });
+
+  it("project:chat mentions streaming chat + persistence", () => {
+    const text = helpForView("project:chat");
+    expect(text).toContain("Chat");
+    expect(text).toContain("streaming");
+    expect(text).toContain("persist");
+    expect(text).toContain("orchestrator");
   });
 
   it("project:agents shows Enter to open + /memory + /run + context /model", () => {
@@ -156,10 +173,12 @@ describe("helpViewFor — nav state → HelpView mapping", () => {
     expect(helpViewFor("home", "overview", "status", null)).toBe("home:overview");
     expect(helpViewFor("home", "orchestrator", "status", null)).toBe("home:orchestrator");
     expect(helpViewFor("home", "projects", "status", null)).toBe("home:projects");
+    expect(helpViewFor("home", "drafts", "status", null)).toBe("home:drafts");
   });
 
   it("maps project surface + tab (no detail) to project:<tab>", () => {
     expect(helpViewFor("project", "overview", "status", null)).toBe("project:status");
+    expect(helpViewFor("project", "overview", "chat", null)).toBe("project:chat");
     expect(helpViewFor("project", "overview", "agents", null)).toBe("project:agents");
     expect(helpViewFor("project", "overview", "runs", null)).toBe("project:runs");
     expect(helpViewFor("project", "overview", "checkpoint", null)).toBe("project:checkpoint");

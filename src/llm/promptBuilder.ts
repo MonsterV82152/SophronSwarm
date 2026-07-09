@@ -15,6 +15,7 @@
  * See docs/PHASE_0_DESIGN.md §7.
  */
 import type { AgentDefinition, LLMMessage } from "../types.js";
+import { renderAttachments, type Attachment } from "../prompt/attachments.js";
 
 const BASE_SYSTEM_RULES = `You are an agent operating inside the SophronSwarm multi-agent platform.
 
@@ -33,6 +34,8 @@ export interface BuildContext {
   sharedMemory?: Map<string, string>;
   /** Per-agent memory text to inject (Phase 3). First ~200 lines of MEMORY.md. */
   agentMemory?: string;
+  /** File attachments embedded by the operator (e.g. via @path references). */
+  attachments?: Attachment[];
 }
 
 export class PromptBuilder {
@@ -60,10 +63,11 @@ export class PromptBuilder {
     if (agent.name) system += `\nYour agent name is "${agent.name}".\n`;
     messages.push({ role: "system", content: system });
 
-    // ── Position 1: immutable task ───────────────────────────────────────
+    // ── Position 1: immutable task (with optional file attachments) ──────
+    const attachmentBlock = ctx.attachments && ctx.attachments.length > 0 ? `${renderAttachments(ctx.attachments)}\n\n` : "";
     messages.push({
       role: "user",
-      content: `Working directory: ${ctx.workingDir}\n\nTASK:\n${task}`,
+      content: `${attachmentBlock}Working directory: ${ctx.workingDir}\n\nTASK:\n${task}`,
     });
 
     return messages;

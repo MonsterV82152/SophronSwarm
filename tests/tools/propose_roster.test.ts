@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { propose_roster } from "../../src/tools/builtin/propose_roster.js";
+import { sophronRoot } from "../../src/tools/builtin/global.js";
 import { AgentDraftStore, DRAFT_DIR_NAME } from "../../src/agent/drafts.js";
 import type { AgentDefinition, AgentRunState } from "../../src/types.js";
 import type { SharedServices } from "../../src/tools/schema.js";
@@ -22,10 +23,13 @@ function makeState(workingDir: string): AgentRunState {
   };
 }
 
-/** Minimal services stub — propose_roster only reads agentRegistry.scan().agents.length. */
+/** Minimal services stub — propose_roster only reads agentRegistry.listProjectAgents().length. */
 function makeServices(approvedAgentCount = 0): SharedServices {
   return {
-    agentRegistry: { scan: () => ({ agents: Array(approvedAgentCount).fill(null) }) },
+    agentRegistry: {
+      scan: () => ({ agents: Array(approvedAgentCount).fill(null) }),
+      listProjectAgents: () => Array(approvedAgentCount).fill(null),
+    },
   } as unknown as SharedServices;
 }
 
@@ -33,6 +37,7 @@ const baseAgent = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
   description: `${name} description`,
   systemPrompt: `You are ${name}.`,
+  model: "ollama:qwen3.5:9b-thinking",
   ...extra,
 });
 
@@ -49,8 +54,8 @@ describe("propose_roster tool", () => {
       args: {
         summary: "core team",
         agents: [
-          baseAgent("builder", { tools: ["write_file"], model: "inherit", permissionMode: "auto" }),
-          baseAgent("tester", { tools: ["run_command"], model: "mid" }),
+          baseAgent("builder", { tools: ["write_file"], model: "ollama:qwen3.5:9b-thinking", permissionMode: "auto" }),
+          baseAgent("tester", { tools: ["run_command"], model: "openrouter:deepseek/deepseek-v4-flash" }),
         ],
       },
       agent: {} as AgentDefinition,
@@ -86,6 +91,23 @@ describe("propose_roster tool", () => {
     expect(new AgentDraftStore(dir).draftFiles()).toEqual(["solo"]);
   });
 
+  it("writes drafts into projectPath when provided", () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "sophron-propose-roster-target-"));
+    try {
+      const out = propose_roster.handler({
+        args: { projectPath: projectDir, agents: [baseAgent("mover")] },
+        agent: {} as AgentDefinition,
+        state: makeState(dir),
+        services: makeServices(),
+      });
+      expect(out).toMatch(/Drafted 1 agent\(s\)/);
+      expect(new AgentDraftStore(projectDir).draftFiles()).toEqual(["mover"]);
+      expect(new AgentDraftStore(dir).draftFiles()).toEqual([]);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("defaults permissionMode to 'default' when omitted", () => {
     propose_roster.handler({
       args: { agents: [baseAgent("x")] },
@@ -95,6 +117,18 @@ describe("propose_roster tool", () => {
     });
     const content = readFileSync(join(dir, DRAFT_DIR_NAME, "x.md"), "utf8");
     expect(content).toContain("permissionMode: default");
+  });
+
+  it("refuses to draft into the global sophron root without an explicit projectPath", () => {
+    const globalDir = sophronRoot();
+    const out = propose_roster.handler({
+      args: { agents: [baseAgent("orphan")] },
+      agent: {} as AgentDefinition,
+      state: makeState(globalDir),
+      services: makeServices(),
+    });
+    expect(out).toMatch(/Refused:.*project workspace/);
+    expect(new AgentDraftStore(globalDir).draftFiles()).toEqual([]);
   });
 
   it("refuses if ANY entry uses full-auto (atomic — nothing written)", () => {

@@ -37,20 +37,22 @@
 
 // ── Surfaces & tabs ─────────────────────────────────────────────────────────
 
-export type HomeTab = "overview" | "orchestrator" | "projects";
-export type ProjectTab = "status" | "agents" | "runs" | "checkpoint" | "memory" | "cost";
+export type HomeTab = "overview" | "orchestrator" | "projects" | "drafts";
+export type ProjectTab = "status" | "chat" | "agents" | "runs" | "checkpoint" | "memory" | "cost";
 
-export const HOME_TABS: HomeTab[] = ["overview", "orchestrator", "projects"];
-export const PROJECT_TABS: ProjectTab[] = ["status", "agents", "runs", "checkpoint", "memory", "cost"];
+export const HOME_TABS: HomeTab[] = ["overview", "orchestrator", "projects", "drafts"];
+export const PROJECT_TABS: ProjectTab[] = ["status", "chat", "agents", "runs", "checkpoint", "memory", "cost"];
 
 /** Human-readable labels for the tab bar. */
 export const HOME_TAB_LABELS: Record<HomeTab, string> = {
   overview: "Overview",
   orchestrator: "Orchestrator",
   projects: "Projects",
+  drafts: "Drafts",
 };
 export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
   status: "Status",
+  chat: "Chat",
   agents: "Agents",
   runs: "Runs",
   checkpoint: "Checkpoint",
@@ -83,6 +85,8 @@ export interface NavState {
   projectsIndex: number;
   agentsIndex: number;
   runsIndex: number;
+  draftsIndex: number;
+  chatThreadsIndex: number;
   /** The current input-bar text (composed in input focus). */
   input: string;
 }
@@ -99,6 +103,8 @@ export function initialNavState(): NavState {
     projectsIndex: 0,
     agentsIndex: 0,
     runsIndex: 0,
+    draftsIndex: 0,
+    chatThreadsIndex: 0,
     input: "",
   };
 }
@@ -165,11 +171,13 @@ export function activeProjectTab(s: NavState): ProjectTab {
 export function navReducer(
   state: NavState,
   action: NavAction,
-  listLengths?: Partial<Record<"projects" | "agents" | "runs", number>>,
+  listLengths?: Partial<Record<"projects" | "agents" | "runs" | "drafts" | "chatThreads", number>>,
 ): NavState {
   const projectsLen = listLengths?.projects ?? 0;
   const agentsLen = listLengths?.agents ?? 0;
   const runsLen = listLengths?.runs ?? 0;
+  const draftsLen = listLengths?.drafts ?? 0;
+  const chatThreadsLen = listLengths?.chatThreads ?? 0;
 
   switch (action.kind) {
     // ── Tab bar horizontal movement ────────────────────────────────────────
@@ -217,10 +225,14 @@ export function navReducer(
       if (state.surface === "home" && activeHomeTab(state) === "projects") {
         return { ...state, projectsIndex: clamp(state.projectsIndex + delta, Math.max(projectsLen, 1)) };
       }
+      if (state.surface === "home" && activeHomeTab(state) === "drafts") {
+        return { ...state, draftsIndex: clamp(state.draftsIndex + delta, Math.max(draftsLen, 1)) };
+      }
       if (state.surface === "project") {
         const tab = activeProjectTab(state);
         if (tab === "agents") return { ...state, agentsIndex: clamp(state.agentsIndex + delta, Math.max(agentsLen, 1)) };
         if (tab === "runs") return { ...state, runsIndex: clamp(state.runsIndex + delta, Math.max(runsLen, 1)) };
+        if (tab === "chat") return { ...state, chatThreadsIndex: clamp(state.chatThreadsIndex + delta, Math.max(chatThreadsLen, 1)) };
       }
       return state;
     }

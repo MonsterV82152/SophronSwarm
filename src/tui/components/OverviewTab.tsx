@@ -37,10 +37,21 @@ export function OverviewTab({ overview, activeProjectName }: OverviewTabProps) {
           {overview.activeApprovalsPending > 0 ? (
             <Text color="yellow"> · ⚠ {overview.activeApprovalsPending} pending approval(s)</Text>
           ) : null}
+          {overview.totalDraftsPending > 0 ? (
+            <Text color="yellow"> · 📝 {overview.totalDraftsPending} draft(s) pending</Text>
+          ) : null}
         </Text>
       </Box>
 
       {/* ── Needs attention ── */}
+      {overview.totalDraftsPending > 0 ? (
+        <Box marginBottom={1}>
+          <Text bold color="yellow">
+            {"  "}→ {overview.totalDraftsPending} agent draft(s) pending approval — switch to the Drafts tab to review
+          </Text>
+        </Box>
+      ) : null}
+
       {overview.needingAttention.length > 0 ? (
         <Box marginBottom={1}>
           <Text color="red">
@@ -76,6 +87,9 @@ export function OverviewTab({ overview, activeProjectName }: OverviewTabProps) {
                 <Text dimColor> · last: </Text>
                 <Text color={statusColor as "red" | "green" | "gray"}>{p.lastRunStatus}</Text>
                 <Text dimColor> · {formatTokens(p.lastRunTokens)} tokens</Text>
+                {p.draftsPending > 0 ? (
+                  <Text color="yellow"> · 📝 {p.draftsPending} draft(s)</Text>
+                ) : null}
               </Text>
             </Box>
           );

@@ -23,6 +23,7 @@ import { ToolRegistry } from "../tools/registry.js";
 import { Checkpointer } from "../state/checkpointer.js";
 import { recorder } from "../state/recorder.js";
 import type { SharedServices } from "../tools/schema.js";
+import type { Attachment } from "../prompt/attachments.js";
 import { promoteTool, recordPromotionCosts } from "../mcp/promotion.js";
 import {
   addUsage, EMPTY_USAGE,
@@ -51,6 +52,10 @@ export interface RunOptions {
    * current task (used by the global orchestrator chat to retain session memory
    * without touching project memory stores). */
   history?: LLMMessage[];
+  /** Optional streaming callback for assistant content deltas. */
+  onStream?: (delta: string) => void;
+  /** Optional file attachments to embed into the task prompt. */
+  attachments?: Attachment[];
 }
 
 function initRunState(
@@ -110,6 +115,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     workingDir,
     sharedMemory: sharedMemory.size > 0 ? sharedMemory : undefined,
     agentMemory: agentMemory || undefined,
+    attachments: opts.attachments,
   });
   // Inject prior conversation turns after the system prompt and before the
   // current user task. This gives agents like the global orchestrator local
@@ -138,7 +144,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       const tools = toolDefsFor(dispatcher.registry, agent, state);
       const effectiveModel = opts.modelOverride?.model ?? agent.model;
       const effectiveProvider = opts.modelOverride?.provider ?? agent.provider;
-      const response = await llm.complete({ model: effectiveModel, provider: effectiveProvider, messages, tools });
+      const response = opts.onStream
+        ? await llm.completeStream(
+            { model: effectiveModel, provider: effectiveProvider, messages, tools },
+            { onDelta: opts.onStream },
+          )
+        : await llm.complete({ model: effectiveModel, provider: effectiveProvider, messages, tools });
       state.tokenUsage = addUsage(state.tokenUsage, response.usage);
       recorder.record({
         type: "llm_response",

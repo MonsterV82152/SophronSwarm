@@ -17,7 +17,6 @@ function makeAgent(name: string): AgentDefinition {
     description: `${name} agent`,
     systemPrompt: "",
     model: "ollama:test:1b",
-    modelTier: "inherit",
     permissionMode: "default",
     source: "project",
     filePath: "/tmp/x.md",
@@ -31,6 +30,7 @@ function makeServices(dir: string, agents: AgentDefinition[]): SharedServices {
     llm: {} as never,
     agentRegistry: {
       list: () => agents,
+      listProjectAgents: () => agents,
       get: (n: string) => agents.find((a) => a.name === n),
     } as never,
     toolRegistry: {} as never,

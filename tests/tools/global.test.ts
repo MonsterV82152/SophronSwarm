@@ -20,6 +20,7 @@ import {
   sophronRoot,
 } from "../../src/tools/builtin/global.js";
 import { registerProject, loadRegistry } from "../../src/project/registry.js";
+import { AgentDraftStore } from "../../src/agent/drafts.js";
 import { addProviderInstance, _resetProviderCacheForTests } from "../../src/llm/providers.js";
 
 let tempHome: string;
@@ -295,6 +296,26 @@ describe("init_project", () => {
   });
 });
 
+  it("refuses a non-minimal template when roster drafts already exist", () => {
+    const projectDir = join(workspaceRoot(), "drafty-project");
+    const store = new AgentDraftStore(projectDir);
+    store.writeDraft("custom-agent", "---\nname: custom-agent\ndescription: c\nmodel: openrouter:custom\n---\nbody");
+
+    const out = call(init_project, { name: "drafty-project", template: "cli" });
+    expect(out).toMatch(/Refused:.*roster draft/);
+    expect(existsSync(join(projectDir, "agents", "builder.md"))).toBe(false);
+  });
+
+  it("allows the minimal template even when roster drafts exist", () => {
+    const projectDir = join(workspaceRoot(), "minimal-drafty");
+    const store = new AgentDraftStore(projectDir);
+    store.writeDraft("custom-agent", "---\nname: custom-agent\ndescription: c\nmodel: openrouter:custom\n---\nbody");
+
+    const out = call(init_project, { name: "minimal-drafty", template: "minimal" });
+    expect(out).toContain("Created project 'minimal-drafty'");
+    expect(existsSync(join(projectDir, "agents", "orchestrator.md"))).toBe(true);
+  });
+
 // ── list_providers (architect model-awareness tool) ─────────────────────────
 
 describe("list_providers", () => {
@@ -311,10 +332,9 @@ describe("list_providers", () => {
     expect(out).toContain("zai");
   });
 
-  it("includes model-field tier guidance for the architect", async () => {
+  it("includes model-field guidance for the architect", async () => {
     const out = await callAsync(list_providers);
-    expect(out).toMatch(/cheap/i);
-    expect(out).toMatch(/frontier/i);
+    expect(out).toMatch(/CONCRETE model id/i);
     expect(out).toMatch(/Match the model to the TASK SIZE/i);
   });
 

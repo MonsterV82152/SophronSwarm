@@ -21,11 +21,13 @@ export interface AgentDetailProps {
   agentName: string;
   /** Effective model override for this agent, if any. */
   effectiveModel?: string;
+  /** Live streaming assistant content from a TUI-triggered run. */
+  agentStream?: { agentName: string; text: string } | null;
 }
 
 const REFRESH_MS = 500;
 
-export function AgentDetail({ model, agentName, effectiveModel }: AgentDetailProps) {
+export function AgentDetail({ model, agentName, effectiveModel, agentStream }: AgentDetailProps) {
   const agent = model.agents.find((a) => a.name === agentName);
 
   // ── Live stream: re-read the agent's most recent run on an interval ──
@@ -92,7 +94,19 @@ export function AgentDetail({ model, agentName, effectiveModel }: AgentDetailPro
         </Box>
       )}
 
-      {/* ── Live stream ── */}
+      {/* ── Live stream (in-process TUI run) ── */}
+      {agentStream && agentStream.agentName === agentName && agentStream.text ? (
+        <>
+          <Box marginTop={1} marginBottom={1}>
+            <Text dimColor>{"  ── streaming ──"}</Text>
+          </Box>
+          <Box marginBottom={1}>
+            <Text color="cyan">{"  "}{agentStream.text}</Text>
+          </Box>
+        </>
+      ) : null}
+
+      {/* ── Live stream (JSONL tail) ── */}
       <Box marginTop={1} marginBottom={1}>
         <Text dimColor>
           {"  ── live stream "}

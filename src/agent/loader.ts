@@ -12,7 +12,7 @@ import matter from "gray-matter";
 import { z } from "zod";
 import { resolveModelWithProvider } from "../llm/providers.js";
 import { log } from "../util/log.js";
-import type { AgentDefinition, ModelTier, PermissionMode } from "../types.js";
+import type { AgentDefinition, PermissionMode } from "../types.js";
 
 const PERMISSION_MODES = ["default", "accept-edits", "auto", "plan", "full-auto"] as const;
 
@@ -21,7 +21,7 @@ const FrontmatterSchema = z.object({
   description: z.string().min(1),
   tools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),
-  model: z.union([z.enum(["inherit", "frontier", "mid", "cheap"]), z.string()]).default("inherit"),
+  model: z.string().min(1),
   /** Named provider instance (M2). When set, targets a specific configured
    * endpoint (e.g. "ollama-desktop"). When unset, resolved from the model. */
   provider: z.string().optional(),
@@ -34,6 +34,8 @@ const FrontmatterSchema = z.object({
   maxTurns: z.number().int().positive().optional(),
   outputPurifier: z.enum(["default", "aggressive", "off"]).optional(),
   outputPurifierThreshold: z.number().int().positive().optional(),
+  /** Optional version marker for system-installed agents (orchestrator, architect). */
+  templateVersion: z.number().int().positive().optional(),
 });
 
 export type AgentSource = "project" | "user" | "builtin";
@@ -108,7 +110,6 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
     disallowedTools: fm.disallowedTools,
     model,
     provider,
-    modelTier: fm.model as ModelTier,
     permissionMode: fm.permissionMode as PermissionMode,
     mcpServers: fm.mcpServers,
     memoryScopes: fm.memoryScopes,

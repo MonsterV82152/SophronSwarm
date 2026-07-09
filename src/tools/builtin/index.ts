@@ -5,14 +5,16 @@
  * (M7: list_projects, propose_project, init_project — global orchestrator only).
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
-import { dirname, relative, join } from "node:path";
+import { dirname, relative, join, isAbsolute } from "node:path";
 import type { ToolSpec } from "../schema.js";
-import { safeResolve } from "./paths.js";
+import { safeResolve, safeResolveAllowed } from "./paths.js";
+import { workspaceRoot, sophronRoot } from "./global.js";
 import { run_command } from "./run_command.js";
 import { apply_patch } from "./apply_patch.js";
 import { delegate } from "./delegate.js";
 import { remember } from "./remember.js";
 import { advance_checkpoint } from "./advance_checkpoint.js";
+import { edit_checkpoints } from "./edit_checkpoints.js";
 import { mcp_tool_search } from "./mcp_tool_search.js";
 import { propose_agent } from "./propose_agent.js";
 import { propose_roster } from "./propose_roster.js";
@@ -47,8 +49,13 @@ export const read_file: ToolSpec = {
     },
     required: ["path"],
   },
-  handler: ({ args, state }) => {
-    const abs = safeResolve(state.workingDir, requireString(args, "path"));
+  handler: ({ args, state, agent }) => {
+    const rel = requireString(args, "path");
+    const allowedRoots = [state.workingDir];
+    if (agent.noMemory === true || agent.name === "global-orchestrator" || agent.name === "architect") {
+      allowedRoots.push(workspaceRoot(), sophronRoot());
+    }
+    const abs = isAbsolute(rel) ? safeResolveAllowed(rel, allowedRoots) : safeResolve(state.workingDir, rel);
     if (!existsSync(abs)) return "(file does not exist on disk)";
     const content = readFileSync(abs, "utf8");
     return content;
@@ -85,10 +92,15 @@ export const list_dir: ToolSpec = {
     },
     required: [],
   },
-  handler: ({ args, state }) => {
+  handler: ({ args, state, agent }) => {
     const rel = typeof args["path"] === "string" ? args["path"] : ".";
-    const abs = safeResolve(state.workingDir, rel);
+    const allowedRoots = [state.workingDir];
+    if (agent.noMemory === true || agent.name === "global-orchestrator" || agent.name === "architect") {
+      allowedRoots.push(workspaceRoot(), sophronRoot());
+    }
+    const abs = isAbsolute(rel) ? safeResolveAllowed(rel, allowedRoots) : safeResolve(state.workingDir, rel);
     if (!existsSync(abs)) return "(directory does not exist on disk)";
+
     const entries = readdirSync(abs).map((name) => {
       const full = join(abs, name);
       let kind = "file";
@@ -131,4 +143,4 @@ export const read_raw_output: ToolSpec = {
   },
 };
 
-export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint, mcp_tool_search, propose_agent, propose_roster, read_raw_output, ...GLOBAL_TOOLS];
+export const BUILTIN_TOOLS: ToolSpec[] = [echo, read_file, write_file, list_dir, run_command, apply_patch, delegate, remember, advance_checkpoint, edit_checkpoints, mcp_tool_search, propose_agent, propose_roster, read_raw_output, ...GLOBAL_TOOLS];

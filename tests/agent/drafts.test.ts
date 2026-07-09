@@ -128,7 +128,7 @@ describe("propose_agent tool", () => {
         description: "Builds features",
         systemPrompt: "You build features.",
         tools: ["write_file", "run_command"],
-        model: "inherit",
+        model: "ollama:qwen3.5:9b-thinking",
         permissionMode: "auto",
       },
       agent: {} as AgentDefinition,
@@ -156,6 +156,7 @@ describe("propose_agent tool", () => {
         name: "risky",
         description: "x",
         systemPrompt: "y",
+        model: "ollama:qwen3.5:9b-thinking",
         permissionMode: "full-auto",
       },
       agent: {} as AgentDefinition,
@@ -171,7 +172,7 @@ describe("propose_agent tool", () => {
     store.writeDraft("a", "x");
     store.approve("a"); // closes bootstrap
     const out = propose_agent.handler({
-      args: { name: "late", description: "x", systemPrompt: "y" },
+      args: { name: "late", description: "x", systemPrompt: "y", model: "ollama:qwen3.5:9b-thinking" },
       agent: {} as AgentDefinition,
       state: makeState(dir),
       services: stubServices,
@@ -179,15 +180,15 @@ describe("propose_agent tool", () => {
     expect(out).toMatch(/Could not draft/);
   });
 
-  it("requires name, description, systemPrompt", () => {
+  it("requires name, description, systemPrompt, and model", () => {
     expect(() =>
       propose_agent.handler({
-        args: { name: "x" },
+        args: { name: "x", description: "d", systemPrompt: "s" },
         agent: {} as AgentDefinition,
         state: makeState(dir),
         services: stubServices,
       }),
-    ).toThrow(/Missing.*systemPrompt|Missing.*description/);
+    ).toThrow(/Missing.*model/);
   });
 });
 

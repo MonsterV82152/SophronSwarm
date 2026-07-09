@@ -85,7 +85,7 @@ SophronSwarm (global)                          ← operator's home
 | **M16 — Environment-Sensitive `/model`** | ✅ Complete | `/model <spec>` infers target from agent detail / agents tab / global orchestrator; 6 new tests |
 | **M17 — Global Orchestrator `/model` Help** | ✅ Complete | `/model <spec>` documented in orchestrator + agents help; help tests updated |
 | **M18 — Persistent `/model` Updates** | ✅ Complete | `/model` writes resolved model/provider back to the agent `.md` file; `updateAgentModelFile` utility + tests |
-| **M19 — Orchestrator Chat History** | 📦 Planned | Multiple saved chats with the global orchestrator; ↑/↓ list of chat titles; enter to continue a prior chat |
+| **M19 — Orchestrator Chat History** | ✅ Complete | Multiple saved chats with the global orchestrator; ↑/↓ list of chat titles; enter to continue a prior chat |
 
 ---
 
@@ -570,22 +570,33 @@ reload with the new model on the next registry scan.
 
 ---
 
-### M19 — Orchestrator Chat History 📦
+### M19 — Orchestrator Chat History ✅
 **Size:** Medium  
-**Status:** Planned — 2026-07-08  
-**Why:** The global orchestrator currently has exactly one in-memory chat thread
-per TUI session. Operators want to maintain multiple parallel project-planning
+**Status:** Complete — 2026-07-08  
+**Why:** The global orchestrator previously had exactly one in-memory chat thread
+per TUI session. Operators now maintain multiple parallel project-planning
 conversations, revisit previous chats, and continue them.
 
-**Spec:**
-- Persist orchestrator chat threads to disk (e.g. `~/.sophron/chats/<thread-id>.jsonl`)
-  with a human-readable title derived from the first user message.
-- In the Home › Orchestrator tab, ↑/↓ navigate a list of saved chat titles
-  (replacing the current non-navigable chat view when in "list mode").
-- Pressing Enter on a title opens that chat and resumes the conversation.
-- A slash command or keybinding creates a new chat thread.
-- Chat content is still **not injected as project memory**; persisted threads are
-  purely for operator convenience.
+**What changed:**
+- Added `src/tui/chat.ts` to persist orchestrator chat threads as JSON files under
+  `~/.sophron/chats/<thread-id>.json` with metadata (`id`, `title`, `createdAt`,
+  `updatedAt`) and a message list.
+- Thread titles are derived from the first user message (truncated to 60 chars).
+- System-feedback messages are stripped before saving, so persisted threads contain
+  only operator + orchestrator turns.
+- The Home › Orchestrator tab now has two modes:
+  - **List mode** (no active thread): ↑/↓ navigate saved thread titles, Enter opens
+    the selected thread.
+  - **Chat mode** (active thread): the conversation is shown and new messages are
+    appended to the active thread.
+- Added `/new` to start a fresh thread and `/chats` to return to the thread list.
+- Pressing Esc from chat mode returns to the thread list.
+- Free text typed while viewing the list auto-creates a new thread and sends the
+  message.
+- Resumed threads are loaded into the orchestrator run as `history`; they are still
+  **not injected as project/agent memory**.
+- Added `tests/tui/orchestratorThreads.test.ts` plus list-mode render tests and
+  slash-command parser tests.
 
 **Delivers:** Claude-Code/Codex-style chat history for the global orchestrator.
 
@@ -626,6 +637,6 @@ M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, **
 (TUI surface-switch render cleanup)**, **M15 (TUI single-page render fix)**,
 **M16 (environment-sensitive `/model`)**, **M17 (global orchestrator `/model`
 help)**, and **M18 (persistent `/model` updates)** are ✅ complete.
-**M19 (orchestrator chat history)** is 📦 planned next.
+**M19 (orchestrator chat history)** is ✅ complete.
 **M9 (web UI)** remains deferred (CLI-first is locked) and can be picked up in
 parallel by a separate effort.

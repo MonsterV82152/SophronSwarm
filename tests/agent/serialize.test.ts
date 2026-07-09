@@ -7,12 +7,13 @@ describe("serializeDraft", () => {
       name: "builder",
       description: "Builds things",
       systemPrompt: "You build things.",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
     });
     expect(out.startsWith("---\n")).toBe(true);
     expect(out).toContain("name: builder");
     expect(out).toContain("description: Builds things");
-    expect(out).toContain("model: inherit"); // default when no model given
+    expect(out).toContain("model: \"ollama:qwen3.5:9b-thinking\"");
     expect(out).toContain("permissionMode: default");
     expect(out).toContain("\n---\n"); // closing frontmatter fence
     expect(out).toContain("You build things.");
@@ -23,11 +24,10 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
-      model: "frontier",
+      model: "openrouter:deepseek/deepseek-v4-flash",
       permissionMode: "default",
     });
-    expect(out).toContain("model: frontier");
-    expect(out).not.toContain("model: inherit");
+    expect(out).toContain('model: "openrouter:deepseek/deepseek-v4-flash"');
   });
 
   it("omits optional fields when not provided", () => {
@@ -35,6 +35,7 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
     });
     expect(out).not.toContain("tools:");
@@ -48,6 +49,7 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
       tools: ["write_file", "run_command"],
       delegateAllowlist: ["builder", "tester"],
@@ -63,6 +65,7 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
       maxTurns: 25,
     });
@@ -74,6 +77,7 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
       tools: [],
     });
@@ -85,6 +89,7 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "  body with spaces  \n\n",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
     });
     expect(out).not.toMatch(/\n\n\n$/); // no triple trailing newline
@@ -96,6 +101,7 @@ describe("serializeDraft", () => {
       name: "x",
       description: "does a: b and # c",
       systemPrompt: "s",
+      model: "ollama:qwen3.5:9b-thinking",
       permissionMode: "default",
     });
     // The colon/hash in the description forces quoting.

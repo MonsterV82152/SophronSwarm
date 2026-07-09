@@ -27,7 +27,6 @@ function makeAgent(name: string): AgentDefinition {
     description: `${name} agent`,
     systemPrompt: "",
     model: "ollama:test:1b",
-    modelTier: "inherit",
     permissionMode: "default",
     source: "project",
     filePath: join(tmpdir(), `${name}.md`),
@@ -39,7 +38,7 @@ function makeServices(dir: string): SharedServices {
   const agentMem = new AgentMemoryStore(join(dir, ".sophron", "memory"));
   return {
     llm: {} as never,
-    agentRegistry: { list: () => [], get: () => undefined } as never,
+    agentRegistry: { list: () => [], listProjectAgents: () => [], get: () => undefined } as never,
     toolRegistry: {} as never,
     dispatcher: {} as never,
     checkpointer: {} as never,
@@ -64,9 +63,9 @@ describe("App shell render", () => {
     mkdirSync(join(dir, "agents"), { recursive: true });
     writeFileSync(
       join(dir, "agents", "builder.md"),
-      "---\\nname: builder\\ndescription: builds things\\nmodel: ollama:test:1b\\n---\\n\\nYou are a builder agent.\\n",
+      `---\nname: builder\ndescription: builds things\nmodel: ollama:test:1b\n---\n\nYou are a builder agent.\n`,
     );
-    registry = new AgentRegistry();
+    registry = new AgentRegistry(dir);
     registry.scan();
     approvals = new ApprovalsQueue();
     services = makeServices(dir);

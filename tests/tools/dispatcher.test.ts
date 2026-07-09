@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ToolRegistry } from "../../src/tools/registry.js";
@@ -19,7 +19,6 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
     description: "test",
     systemPrompt: "",
     model: "ollama:dummy",
-    modelTier: "inherit",
     permissionMode: "default",
     source: "project",
     filePath: "/tmp/x.md",
@@ -113,6 +112,63 @@ describe("ToolDispatcher", () => {
     const r = await dispatcher.dispatch(makeCall("list_dir", {}), makeAgent(), makeState(dir));
     const parsed = JSON.parse(r.content);
     expect(parsed.some((e: { name: string }) => e.name === "a.txt")).toBe(true);
+  });
+
+  it("reads a file via absolute path under the workspace", async () => {
+    writeFileSync(join(dir, "abs.txt"), "absolute");
+    const r = await dispatcher.dispatch(
+      makeCall("read_file", { path: join(dir, "abs.txt") }),
+      makeAgent(),
+      makeState(dir),
+    );
+    expect(r.isError).toBeFalsy();
+    expect(r.content).toBe("absolute");
+  });
+
+  it("lists a directory via absolute path", async () => {
+    writeFileSync(join(dir, "abs-dir-file.txt"), "x");
+    const r = await dispatcher.dispatch(
+      makeCall("list_dir", { path: dir }),
+      makeAgent(),
+      makeState(dir),
+    );
+    const parsed = JSON.parse(r.content);
+    expect(parsed.some((e: { name: string }) => e.name === "abs-dir-file.txt")).toBe(true);
+  });
+
+  it("rejects absolute path outside workspace for project agents", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "sophron-out-"));
+    writeFileSync(join(outside, "secret.txt"), "x");
+    const r = await dispatcher.dispatch(
+      makeCall("read_file", { path: join(outside, "secret.txt") }),
+      makeAgent(),
+      makeState(dir),
+    );
+    rmSync(outside, { recursive: true, force: true });
+    expect(r.isError).toBe(true);
+    expect(r.content).toMatch(/outside allowed workspaces/);
+  });
+
+  it("allows global agents to read absolute paths under the workspace root", async () => {
+    const origHome = process.env.HOME;
+    const fakeHome = mkdtempSync(join(tmpdir(), "sophron-home-"));
+    process.env.HOME = fakeHome;
+    try {
+      const projectRoot = join(fakeHome, "sophron_workspace", "demo-project");
+      mkdirSync(projectRoot, { recursive: true });
+      writeFileSync(join(projectRoot, "note.txt"), "hello project");
+
+      const r = await dispatcher.dispatch(
+        makeCall("read_file", { path: join(projectRoot, "note.txt") }),
+        makeAgent({ name: "global-orchestrator", noMemory: true }),
+        makeState(join(fakeHome, ".sophron")),
+      );
+      expect(r.isError).toBeFalsy();
+      expect(r.content).toBe("hello project");
+    } finally {
+      process.env.HOME = origHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
   });
 
   it("rejects path traversal", async () => {

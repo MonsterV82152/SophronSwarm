@@ -18,9 +18,11 @@ export interface ProjectsTabProps {
   selectedIndex: number;
   /** Path of the currently active project (highlighted). */
   activePath: string;
+  /** Map of project path → pending draft count. */
+  draftCounts?: Map<string, number>;
 }
 
-export function ProjectsTab({ projects, selectedIndex, activePath }: ProjectsTabProps) {
+export function ProjectsTab({ projects, selectedIndex, activePath, draftCounts }: ProjectsTabProps) {
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
@@ -32,17 +34,20 @@ export function ProjectsTab({ projects, selectedIndex, activePath }: ProjectsTab
         <Text dimColor>{"  (no projects registered — use the Orchestrator tab to propose one)"}</Text>
       ) : (
         <SelectList
-          items={projects.map((p) => ({
-            id: p.path,
-            label: `${p.pinned ? "📌 " : ""}${p.name}${p.path === activePath ? " (active)" : ""}`,
-            hint: p.path,
-            icon: "📁",
-          }))}
+          items={projects.map((p) => {
+            const drafts = draftCounts?.get(p.path) ?? 0;
+            return {
+              id: p.path,
+              label: `${p.pinned ? "📌 " : ""}${p.name}${p.path === activePath ? " (active)" : ""}`,
+              hint: `${p.path}${drafts > 0 ? ` · 📝 ${drafts} draft(s) pending` : ""}`,
+              icon: "📁",
+            };
+          })}
           selectedIndex={selectedIndex}
         />
       )}
       <Box marginTop={1}>
-        <Text dimColor>{"  (↑↓ select · Enter to open · Esc back)"}</Text>
+        <Text dimColor>{"  (↑↓ select · Enter to open · Esc back · /drafts to review pending agent drafts)"}</Text>
       </Box>
     </Box>
   );

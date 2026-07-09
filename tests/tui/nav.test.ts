@@ -39,12 +39,14 @@ describe("nav state machine — tab bar movement", () => {
     expect(activeHomeTab(s)).toBe("orchestrator");
     s = navReducer(s, { kind: "tabRight" });
     expect(activeHomeTab(s)).toBe("projects");
+    s = navReducer(s, { kind: "tabRight" });
+    expect(activeHomeTab(s)).toBe("drafts");
     // Clamp at the end.
     s = navReducer(s, { kind: "tabRight" });
-    expect(activeHomeTab(s)).toBe("projects");
+    expect(activeHomeTab(s)).toBe("drafts");
     // Back left.
     s = navReducer(s, { kind: "tabLeft" });
-    expect(activeHomeTab(s)).toBe("orchestrator");
+    expect(activeHomeTab(s)).toBe("projects");
   });
 
   it("←/→ moves across the project tabs", () => {
@@ -52,11 +54,16 @@ describe("nav state machine — tab bar movement", () => {
     expect(s.surface).toBe("project");
     expect(activeProjectTab(s)).toBe("status");
     s = navReducer(s, { kind: "tabRight" });
+    expect(activeProjectTab(s)).toBe("chat");
+    s = navReducer(s, { kind: "tabRight" });
     expect(activeProjectTab(s)).toBe("agents");
     s = navReducer(s, { kind: "tabRight" });
     expect(activeProjectTab(s)).toBe("runs");
     // Clamp at the start.
     s = reduceAll(s, [
+      { kind: "tabLeft" },
+      { kind: "tabLeft" },
+      { kind: "tabLeft" },
       { kind: "tabLeft" },
       { kind: "tabLeft" },
       { kind: "tabLeft" },
@@ -164,8 +171,23 @@ describe("nav state machine — list movement", () => {
     expect(s.projectsIndex).toBe(1);
   });
 
+  it("↑/↓ moves the drafts selection on the home Drafts tab", () => {
+    let s = navReducer(initialNavState(), { kind: "tabRight" }); // orchestrator
+    s = navReducer(s, { kind: "tabRight" }); // projects
+    s = navReducer(s, { kind: "tabRight" }); // drafts
+    s = navReducer(s, { kind: "enterTab" }); // content
+    expect(s.focus).toBe("content");
+    s = navReducer(s, { kind: "listDown" }, { drafts: 3 });
+    expect(s.draftsIndex).toBe(1);
+    s = navReducer(s, { kind: "listDown" }, { drafts: 3 });
+    expect(s.draftsIndex).toBe(2);
+    // Clamp at end.
+    s = navReducer(s, { kind: "listDown" }, { drafts: 3 });
+    expect(s.draftsIndex).toBe(2);
+  });
+
   it("↑/↓ moves the agents selection on the project Agents tab", () => {
-    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 1 }); // agents
+    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 2 }); // agents
     s = navReducer(s, { kind: "enterTab" });
     s = navReducer(s, { kind: "listDown" }, { agents: 4 });
     expect(s.agentsIndex).toBe(1);
@@ -174,7 +196,7 @@ describe("nav state machine — list movement", () => {
   });
 
   it("↑/↓ moves the runs selection on the project Runs tab", () => {
-    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 2 }); // runs
+    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 3 }); // runs
     s = navReducer(s, { kind: "enterTab" });
     s = navReducer(s, { kind: "listDown" }, { runs: 2 });
     expect(s.runsIndex).toBe(1);
@@ -200,6 +222,17 @@ describe("nav state machine — list movement", () => {
     s = navReducer(s, { kind: "enterTab" });
     s = navReducer(s, { kind: "listDown" }, { agents: 4 });
     expect(s.agentsIndex).toBe(0);
+  });
+
+  it("↑/↓ moves the chat thread selection on the project Chat tab", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 1 }); // chat
+    s = navReducer(s, { kind: "enterTab" });
+    s = navReducer(s, { kind: "listDown" }, { chatThreads: 3 });
+    expect(s.chatThreadsIndex).toBe(1);
+    s = navReducer(s, { kind: "listDown" }, { chatThreads: 3 });
+    expect(s.chatThreadsIndex).toBe(2);
+    s = navReducer(s, { kind: "listDown" }, { chatThreads: 3 });
+    expect(s.chatThreadsIndex).toBe(2); // clamped
   });
 });
 
@@ -271,9 +304,9 @@ describe("nav state machine — programmatic navigation", () => {
   });
 
   it("enterProject sets the project surface + optional tab", () => {
-    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 3 });
+    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 4 });
     expect(s.surface).toBe("project");
-    expect(s.projectTabIndex).toBe(3);
+    expect(s.projectTabIndex).toBe(4);
     expect(activeProjectTab(s)).toBe("checkpoint");
   });
 
@@ -310,11 +343,11 @@ describe("nav state machine — tab index preservation", () => {
 });
 
 describe("nav state machine — constants", () => {
-  it("HOME_TABS has 3 tabs in the right order", () => {
-    expect(HOME_TABS).toEqual(["overview", "orchestrator", "projects"]);
+  it("HOME_TABS has 4 tabs in the right order", () => {
+    expect(HOME_TABS).toEqual(["overview", "orchestrator", "projects", "drafts"]);
   });
 
-  it("PROJECT_TABS has 6 tabs in the right order", () => {
-    expect(PROJECT_TABS).toEqual(["status", "agents", "runs", "checkpoint", "memory", "cost"]);
+  it("PROJECT_TABS has 7 tabs in the right order", () => {
+    expect(PROJECT_TABS).toEqual(["status", "chat", "agents", "runs", "checkpoint", "memory", "cost"]);
   });
 });

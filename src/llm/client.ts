@@ -18,7 +18,12 @@ import type {
   LLMResponse,
   ToolCall,
   ToolDefinition,
+  Usage,
 } from "../types.js";
+
+export interface StreamCallbacks {
+  onDelta: (delta: string) => void;
+}
 
 export interface CompleteRequest {
   model: string; // concrete model id (already resolved by the loader)
@@ -91,6 +96,91 @@ export class LLMClient {
     });
     const res = await testClient.models.list();
     return res.data.map((m) => ({ id: m.id }));
+  }
+
+  /**
+   * Stream a chat completion, calling `onDelta` for every content chunk.
+   * Returns the final aggregated response (content, tool calls, finish reason).
+   * Token usage is reported when the provider sends it via
+   * `stream_options: { include_usage: true }`; otherwise it is zeroed.
+   */
+  async completeStream(req: CompleteRequest, callbacks: StreamCallbacks): Promise<LLMResponse> {
+    let provider: ProviderName | undefined = req.provider;
+    let model = req.model;
+    if (!provider) {
+      try {
+        const resolved = resolveModel(req.model);
+        provider = resolved.provider;
+        model = resolved.model;
+      } catch (e) {
+        provider = "openrouter";
+        log.warn({ model: req.model, err: (e as Error).message }, "no provider; assuming openrouter");
+      }
+    }
+
+    log.debug({ provider, model, msgCount: req.messages.length }, "LLM completeStream()");
+    const client = this.sdk(provider);
+
+    return retryTransient(async () => {
+      const streamResp = await client.chat.completions.create({
+        model,
+        messages: req.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+        tools: req.tools
+          ? (req.tools as unknown as OpenAI.Chat.Completions.ChatCompletionTool[])
+          : undefined,
+        temperature: req.temperature ?? 0,
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+
+      let content = "";
+      const toolAcc: Record<number, ToolCall> = {};
+      let usage: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+      let responseModel = model;
+      let lastFinishReason: string | null | undefined;
+
+      for await (const chunk of streamResp) {
+        if (chunk.model) responseModel = chunk.model;
+        if (chunk.usage) {
+          usage = {
+            promptTokens: chunk.usage.prompt_tokens ?? 0,
+            completionTokens: chunk.usage.completion_tokens ?? 0,
+            totalTokens: chunk.usage.total_tokens ?? 0,
+          };
+        }
+        const choice = chunk.choices[0];
+        if (!choice) continue;
+        if (choice.finish_reason) lastFinishReason = choice.finish_reason;
+        const delta = choice.delta;
+        if (delta?.content) {
+          content += delta.content;
+          callbacks.onDelta(delta.content);
+        }
+        if (delta?.tool_calls) {
+          for (const raw of delta.tool_calls) {
+            const idx = raw.index ?? 0;
+            if (!toolAcc[idx]) {
+              toolAcc[idx] = { id: "", type: "function", function: { name: "", arguments: "" } };
+            }
+            const tc = toolAcc[idx]!;
+            if (raw.id) tc.id = raw.id;
+            if (raw.function?.name) tc.function.name += raw.function.name;
+            if (raw.function?.arguments) tc.function.arguments += raw.function.arguments ?? "";
+          }
+        }
+      }
+
+      const toolCalls = Object.values(toolAcc);
+      const finishReason: FinishReason =
+        toolCalls.length > 0 ? "tool_calls" : mapFinishReason(lastFinishReason);
+      return {
+        content: content || null,
+        toolCalls,
+        usage,
+        finishReason,
+        model: responseModel,
+      };
+    });
   }
 
   async complete(req: CompleteRequest): Promise<LLMResponse> {

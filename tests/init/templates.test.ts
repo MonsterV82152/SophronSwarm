@@ -120,6 +120,37 @@ describe("scaffoldProject", () => {
     expect(content).toBe(STANDARD_ORCHESTRATOR);
   });
 
+  it("inherits the global orchestrator's model at creation time", () => {
+    const globalDir = join(tempHome, ".sophron", "agents");
+    mkdirSync(globalDir, { recursive: true });
+    writeFileSync(
+      join(globalDir, "global-orchestrator.md"),
+      "---\nname: global-orchestrator\ndescription: test CEO\nmodel: mid\ntools: []\n---\ntest\n",
+      "utf8",
+    );
+
+    const path = join(tempHome, "myproj");
+    scaffoldProject(path, { template: "minimal" });
+    const content = readFileSync(join(path, "agents", "orchestrator.md"), "utf8");
+    expect(content).toContain("model: mid");
+    expect(content).not.toContain("model: frontier");
+  });
+
+  it("quotes concrete global orchestrator models in the seeded orchestrator", () => {
+    const globalDir = join(tempHome, ".sophron", "agents");
+    mkdirSync(globalDir, { recursive: true });
+    writeFileSync(
+      join(globalDir, "global-orchestrator.md"),
+      '---\nname: global-orchestrator\ndescription: test CEO\nmodel: "openrouter:anthropic/claude-sonnet-4"\ntools: []\n---\ntest\n',
+      "utf8",
+    );
+
+    const path = join(tempHome, "myproj");
+    scaffoldProject(path, { template: "minimal" });
+    const content = readFileSync(join(path, "agents", "orchestrator.md"), "utf8");
+    expect(content).toContain('model: "openrouter:anthropic/claude-sonnet-4"');
+  });
+
   it("seeds the template's specialist agents", () => {
     const path = join(tempHome, "myproj");
     const result = scaffoldProject(path, { template: "cli" });
@@ -199,6 +230,21 @@ describe("installGlobalArchitect", () => {
     expect(second).toBeNull();
   });
 
+  it("overwrites a stale (unversioned) architect file without force", () => {
+    const dir = join(tempHome, ".sophron", "agents");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "architect.md"),
+      "---\nname: architect\ntools:\n  - read_file\n---\n\nold prompt\n",
+      "utf8",
+    );
+    const result = installGlobalArchitect();
+    expect(result).toBeTruthy();
+    const content = readFileSync(join(dir, "architect.md"), "utf8");
+    expect(content).toBe(GLOBAL_ARCHITECT);
+    expect(content).toContain("propose_roster");
+  });
+
   it("overwrites with force=true", () => {
     installGlobalArchitect();
     const second = installGlobalArchitect(true);
@@ -228,9 +274,8 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     expect(GLOBAL_ARCHITECT).toContain("list_providers");
   });
 
-  it("global architect is model-aware (right-sizes models to task size)", () => {
-    expect(GLOBAL_ARCHITECT).toMatch(/cheap/i);
-    expect(GLOBAL_ARCHITECT).toMatch(/frontier/i);
+  it("global architect is model-aware (chooses concrete models per task)", () => {
+    expect(GLOBAL_ARCHITECT).toMatch(/concrete model id/i);
     expect(GLOBAL_ARCHITECT).toMatch(/list_providers/); // told to discover configured models
     expect(GLOBAL_ARCHITECT).toMatch(/match the model to the task size/i);
   });
@@ -240,16 +285,16 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     expect(GLOBAL_ARCHITECT).toMatch(/list_providers/i);
   });
 
-  it("standard orchestrator defaults to frontier", () => {
-    expect(STANDARD_ORCHESTRATOR).toMatch(/model:\s*frontier/);
+  it("standard orchestrator uses deepseek-v4-flash", () => {
+    expect(STANDARD_ORCHESTRATOR).toContain('model: "openrouter:deepseek/deepseek-v4-flash"');
   });
 
-  it("global architect defaults to frontier", () => {
-    expect(GLOBAL_ARCHITECT).toMatch(/model:\s*frontier/);
+  it("global architect uses deepseek-v4-flash", () => {
+    expect(GLOBAL_ARCHITECT).toContain('model: "openrouter:deepseek/deepseek-v4-flash"');
   });
 
-  it("global orchestrator defaults to frontier", () => {
-    expect(GLOBAL_ORCHESTRATOR).toMatch(/model:\s*frontier/);
+  it("global orchestrator uses deepseek-v4-flash", () => {
+    expect(GLOBAL_ORCHESTRATOR).toContain('model: "openrouter:deepseek/deepseek-v4-flash"');
   });
 
   it("global orchestrator is the no-memory CEO (M7)", () => {
@@ -262,6 +307,9 @@ describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () =>
     // The global orchestrator must NOT have run_command / apply_patch.
     expect(GLOBAL_ORCHESTRATOR).not.toContain("run_command");
     expect(GLOBAL_ORCHESTRATOR).not.toContain("apply_patch");
+    // It can read files the operator references (under ~/.sophron and the workspace).
+    expect(GLOBAL_ORCHESTRATOR).toContain("  - read_file");
+    expect(GLOBAL_ORCHESTRATOR).toContain("  - list_dir");
     // It may only delegate to the architect.
     expect(GLOBAL_ORCHESTRATOR).toContain("architect");
   });
@@ -290,6 +338,22 @@ describe("installGlobalOrchestrator (M7)", () => {
     installGlobalOrchestrator();
     const second = installGlobalOrchestrator();
     expect(second).toBeNull();
+  });
+
+  it("overwrites a stale (unversioned) orchestrator file without force", () => {
+    const dir = join(tempHome, ".sophron", "agents");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "global-orchestrator.md"),
+      "---\nname: global-orchestrator\ntools:\n  - read_file\n  - list_dir\n---\n\nold prompt\n",
+      "utf8",
+    );
+    const result = installGlobalOrchestrator();
+    expect(result).toBeTruthy();
+    const content = readFileSync(join(dir, "global-orchestrator.md"), "utf8");
+    expect(content).toBe(GLOBAL_ORCHESTRATOR);
+    expect(content).toContain("  - read_file");
+    expect(content).toContain("  - list_dir");
   });
 
   it("overwrites with force=true", () => {

@@ -23,8 +23,10 @@ export type HelpView =
   | "home:overview"
   | "home:orchestrator"
   | "home:projects"
+  | "home:drafts"
   // Project surface — list/detail tabs
   | "project:status"
+  | "project:chat"
   | "project:agents"
   | "project:agentDetail"
   | "project:runs"
@@ -47,9 +49,17 @@ const CORE_HELP = `SophronSwarm V3 — help
 ── Always-available commands ──
   /help         Show this help
   /projects     Jump to the Projects tab
+  /drafts       List pending agent drafts across all projects
+  /approve-draft <project> <agent>   Approve a pending agent draft
+  /reject-draft <project> <agent>    Reject a pending agent draft
+  /approve-all-drafts [project]      Approve all pending drafts (optionally scoped)
   /model [<agent>] <spec>  Change an agent's model (updates the .md file; agent inferred from context)
+  /checkpoints ["A" ...]  List or replace project milestones
   /clear        Clear the output log
-  /quit         Exit SophronSwarm`;
+  /quit         Exit SophronSwarm
+
+── File references ──
+  Type @path/to/file.md in any prompt to embed the file's contents.`;
 
 /**
  * Per-view help sections. Each entry is appended after the core section when
@@ -59,7 +69,8 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
   "home:overview": `── Overview ──
   Display-only. Shows cross-project health: total projects, runs, tokens,
   and projects needing attention (failed last run).
-  No drill-in — use ←/→ to reach Orchestrator or Projects.`,
+  When agent drafts are pending, a banner appears; use ←/→ to switch to the
+  Drafts tab to review and approve them.`,
 
   "home:orchestrator": `── Orchestrator (global) ──
   Chat with the global orchestrator — your "CEO" for the whole workspace.
@@ -75,24 +86,42 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
 
   "home:projects": `── Projects ──
   ↑/↓ to select a project · Enter to open it (switches workspace).
-  The active project is marked (active). Esc back to tabs.`,
+  The active project is marked (active). Pending agent drafts are shown per project.
+  /drafts                Review all pending agent drafts
+  /approve-all-drafts    Approve every pending draft across projects
+  Esc back to tabs.`,
+
+  "home:drafts": `── Drafts ──
+  ↑/↓ to select a pending agent draft · Enter to approve it · R to reject it.
+  Drafts are grouped by project; approving moves the agent from draft to active.
+  /approve-all-drafts [project]  Bulk-approve drafts (optionally scoped)
+  /reject-all-drafts [project]   Bulk-reject drafts (optionally scoped)
+  Esc back to tabs.`,
 
   "project:status": `── Status ──
   At-a-glance project health: agent count, recent runs, current checkpoint,
-  token usage, and pending approvals.`,
+  token usage, pending approvals, and pending agent drafts.
+  /checkpoints ["A" ...]  List or replace milestones
+  Type @path/to/file.md in any prompt to embed file contents.`,
+
+  "project:chat": `── Chat ──
+  streaming chat with the per-project orchestrator (or the agent selected
+  in the Agents tab). Messages persist per project under .sophron/chats/.
+  Type below to send a message · Enter to open a thread in list mode
+  /new to start a fresh thread · /chats to list threads · Esc back to tabs`,
 
   "project:agents": `── Agents ──
   ↑/↓ to select an agent · Enter to open its detail (config + live stream).
   /memory <agent>  Show that agent's per-agent memory
   /model <spec>  Change the selected agent's model (updates the .md file)
   /model <agent> <spec>  Change a specific agent's model for this session
-  /run <agent> "<task>"  Queue a task for an agent (use CLI for now)`,
+  /run <agent> "<task>"  Run an agent on a task from the TUI`,
 
   "project:agentDetail": `── Agent detail ──
   Shows the agent's config + a live stream of its latest run (refreshes
-  every 500ms). Type a task below to queue it for this agent.
+  every 500ms). Type a task below to run this agent immediately.
   /model <spec>      Change this agent's model (updates the .md file)
-  /approve <id> y|n  Resolve a pending approval for this agent
+  /approve <id> y|n  Resolve a pending tool approval for this agent
   /rewind <runId>    Rewind to a prior checkpoint of this agent's run
   Esc                Back to the Agents list`,
 
@@ -131,8 +160,8 @@ export function helpForView(view: HelpView): string {
  * (nav.ts): surface + active tab + detail drill-down.
  *
  * @param surface   "home" | "project"
- * @param homeTab   active home tab ("overview" | "orchestrator" | "projects")
- * @param projectTab active project tab ("status" | "agents" | "runs" | ...)
+ * @param homeTab   active home tab ("overview" | "orchestrator" | "projects" | "drafts")
+ * @param projectTab active project tab ("status" | "chat" | "agents" | "runs" | ...)
  * @param detail    "agent" | "run" | null — the drill-down detail type
  */
 export function helpViewFor(

@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SharedServices } from "../tools/schema.js";
 import { CheckpointManager, type Milestone } from "../memory/checkpoints.js";
+import { AgentDraftStore } from "../agent/drafts.js";
 
 export interface AgentSummary {
   name: string;
@@ -63,7 +64,7 @@ export interface DashboardOptions {
 export function buildDashboard(services: SharedServices, opts: DashboardOptions): DashboardModel {
   const runLimit = opts.runLimit ?? 5;
 
-  const agents: AgentSummary[] = services.agentRegistry.list().map((a) => ({
+  const agents: AgentSummary[] = services.agentRegistry.listProjectAgents().map((a) => ({
     name: a.name,
     model: a.model,
     description: a.description,
@@ -309,6 +310,8 @@ export interface ProjectHealth {
   lastRunStatus: string;
   /** Whether the most recent run ended in error. */
   lastRunFailed: boolean;
+  /** Number of pending agent drafts awaiting approval. */
+  draftsPending: number;
 }
 
 /**
@@ -329,6 +332,8 @@ export interface OverviewModel {
    *  approval aggregation needs a global approvals store; for now we surface
    *  the active project's count). */
   activeApprovalsPending: number;
+  /** Agent drafts pending approval across all registered projects. */
+  totalDraftsPending: number;
 }
 
 /**
@@ -346,6 +351,7 @@ export function buildOverview(activeApprovalsPending: number): OverviewModel {
   const totalTokens = health.reduce((sum, h) => sum + h.lastRunTokens, 0);
   const failedRuns = health.filter((h) => h.lastRunFailed).length;
   const needingAttention = health.filter((h) => h.lastRunFailed).map((h) => h.name);
+  const totalDraftsPending = health.reduce((sum, h) => sum + h.draftsPending, 0);
 
   return {
     projects: health,
@@ -355,6 +361,7 @@ export function buildOverview(activeApprovalsPending: number): OverviewModel {
     failedRuns,
     needingAttention,
     activeApprovalsPending,
+    totalDraftsPending,
   };
 }
 
@@ -366,6 +373,7 @@ function projectHealth(entry: ProjectEntry): ProjectHealth {
   const lastRunTokens = last?.tokens ?? 0;
   const lastRunStatus = last?.status ?? "(no runs)";
   const lastRunFailed = last?.status === "error" || last?.status === "halt";
+  const draftsPending = new AgentDraftStore(entry.path).pendingDrafts().length;
   return {
     name: entry.name,
     path: entry.path,
@@ -374,5 +382,6 @@ function projectHealth(entry: ProjectEntry): ProjectHealth {
     lastRunTokens,
     lastRunStatus,
     lastRunFailed,
+    draftsPending,
   };
 }

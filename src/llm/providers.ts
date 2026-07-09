@@ -92,8 +92,6 @@ export interface RawProviderEntry {
 
 interface OperatorConfig {
   providers?: RawProviderEntry[] | Record<string, Omit<RawProviderEntry, "name" | "kind">>;
-  /** Tier → concrete model id overrides (e.g. { frontier: "anthropic/claude-sonnet-4" }). */
-  tiers?: Record<string, string>;
 }
 
 // ── Env-var expansion ───────────────────────────────────────────────────────
@@ -383,40 +381,31 @@ export function defaultForKind(kind: ProviderKind): ProviderConfig | undefined {
 }
 
 /**
- * Resolve an agent's model tier (or explicit prefixed id / named provider) to
- * a concrete (instance, model). Resolution order:
+ * Resolve an agent's model identifier to a concrete (instance, model).
+ * Resolution order:
  *   1. Explicit prefix ("ollama:llama3.2:1b", "zai:glm-4.6", "openrouter:x")
  *      → default instance of that kind.
- *   2. Named tier ("frontier"/"mid"/"cheap"/"inherit") → operator tier map.
- *   3. Bare model id → OpenRouter (the cloud router handles most models).
- *   4. Fallback → first instance with a configured defaultModel + valid creds.
+ *   2. Bare model id → fall back to the first configured provider with a
+ *      defaultModel and valid credentials.
  *
  * Note: when an agent sets an explicit `provider:` in frontmatter, the LOADER
  * resolves the instance directly and passes it through; this function is only
- * called to resolve the *model id* (the tier/prefix logic). See loader.ts.
+ * called to resolve the *model id* (the prefix/fallback logic). See loader.ts.
  */
-export function resolveModel(tier: string): ModelResolution {
+export function resolveModel(model: string): ModelResolution {
   // 1. Explicit prefix → default instance of that kind.
   for (const kind of ["ollama", "zai", "openrouter"] as const) {
     const prefix = `${kind}:`;
-    if (tier.startsWith(prefix)) {
+    if (model.startsWith(prefix)) {
       const inst = defaultForKind(kind);
       if (!inst) {
-        throw new Error(`No '${kind}' provider instance is configured (model prefix '${tier}').`);
+        throw new Error(`No '${kind}' provider instance is configured (model prefix '${model}').`);
       }
-      return { provider: inst.name, model: tier.slice(prefix.length) };
+      return { provider: inst.name, model: model.slice(prefix.length) };
     }
   }
 
-  // 2. Named tier → operator override.
-  const cfg = loadRawConfig();
-  const tierOverride = cfg.tiers?.[tier];
-  if (tierOverride) return resolveModel(tierOverride);
-
-  // "inherit" with no override → fall through to default selection.
-
-  // 3 & 4. Provider defaults in priority order (openrouter, zai, ollama, then
-  // any configured instance with a defaultModel).
+  // 2. Fallback to any configured provider default.
   const order: ProviderKind[] = ["openrouter", "zai", "ollama"];
   for (const kind of order) {
     const inst = defaultForKind(kind);
@@ -424,7 +413,6 @@ export function resolveModel(tier: string): ModelResolution {
       return { provider: inst.name, model: inst.defaultModel };
     }
   }
-  // Any other instance (e.g. openai-compat) with a default model.
   for (const inst of instances()) {
     if (inst.defaultModel && (inst.apiKey || inst.kind === "ollama")) {
       return { provider: inst.name, model: inst.defaultModel };
@@ -432,7 +420,7 @@ export function resolveModel(tier: string): ModelResolution {
   }
 
   throw new Error(
-    `Could not resolve model tier '${tier}'. Configure a provider in ~/.sophron/config.json or set an env default (e.g. OLLAMA_DEFAULT_MODEL).`,
+    `Could not resolve model '${model}'. Configure a provider in ~/.sophron/config.json or use a provider prefix (e.g. ollama:llama3.2:1b).`,
   );
 }
 
@@ -459,12 +447,10 @@ export function resolveModelWithProvider(model: string, provider?: ProviderName)
  *      a configured provider *instance* name, use that provider and treat the
  *      rest as the model id. This lets operators target named instances like
  *      `my-ollama:qwen3.5:9b`.
- *   2. Otherwise fall back to `resolveModel()`, which handles named tiers
- *      (`frontier`/`mid`/`cheap`/`inherit`), kind prefixes (`ollama:...`,
- *      `zai:...`, `openrouter:...`), bare model ids, and tier overrides.
+ *   2. Otherwise fall back to `resolveModel()`, which handles provider kind
+ *      prefixes (`ollama:...`, `zai:...`, `openrouter:...`) and bare model ids.
  *
- * @throws if the provider instance is unknown or no provider can resolve the
- *         tier/model.
+ * @throws if the provider instance is unknown or no provider can resolve the model.
  */
 export function resolveModelSpec(spec: string): ModelResolution {
   const colonIdx = spec.indexOf(":");

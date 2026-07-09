@@ -18,11 +18,21 @@ export type SlashCommand =
   | { kind: "advance" }
   | { kind: "cost" }
   | { kind: "memory"; agent?: string }
-  | { kind: "run"; agent: string; task: string }
+  | { kind: "run"; agent: string; task: string; project?: string }
   | { kind: "model"; agent?: string; spec: string }
+  | { kind: "drafts" }
+  | { kind: "approveDraft"; project: string; name: string }
+  | { kind: "rejectDraft"; project: string; name: string }
+  | { kind: "approveAllDrafts"; project?: string }
+  | { kind: "rejectAllDrafts"; project?: string }
   | { kind: "approve"; id: string; decision: "yes" | "no" }
   | { kind: "rewind"; runId: string }
+  | { kind: "checkpoints"; milestones?: string[] }
   | { kind: "clear" }
+  | { kind: "new" }
+  | { kind: "chats" }
+  | { kind: "switch"; project: string }
+  | { kind: "chat"; project?: string }
   | { kind: "quit" }
   | { kind: "unknown"; raw: string; reason: string }
   | { kind: "task"; text: string }; // free-text (not a slash command)
@@ -77,9 +87,19 @@ export function parseSlashCommand(input: string): SlashCommand {
       return { kind: "memory", agent: tokens[0] };
     case "/run": {
       if (tokens.length < 2) {
-        return { kind: "unknown", raw: trimmed, reason: "/run requires <agent> \"<task>\"" };
+        return { kind: "unknown", raw: trimmed, reason: "/run requires <agent> \"<task>\" or <project>/<agent> \"<task>\"" };
       }
-      return { kind: "run", agent: tokens[0]!, task: tokens.slice(1).join(" ") };
+      const first = tokens[0]!;
+      if (first.includes("/")) {
+        const slashIdx = first.indexOf("/");
+        const project = first.slice(0, slashIdx);
+        const agent = first.slice(slashIdx + 1);
+        if (!project || !agent) {
+          return { kind: "unknown", raw: trimmed, reason: "/run project/agent must contain both project and agent names" };
+        }
+        return { kind: "run", project, agent, task: tokens.slice(1).join(" ") };
+      }
+      return { kind: "run", agent: first, task: tokens.slice(1).join(" ") };
     }
     case "/model": {
       if (tokens.length === 0) {
@@ -110,8 +130,49 @@ export function parseSlashCommand(input: string): SlashCommand {
       }
       return { kind: "rewind", runId: tokens[0]! };
     }
+    case "/checkpoints":
+    case "/cp": {
+      // /checkpoints                -> list
+      // /checkpoints "A" "B" "C"    -> replace milestone list
+      if (tokens.length === 0) return { kind: "checkpoints" };
+      return { kind: "checkpoints", milestones: tokens };
+    }
     case "/clear":
       return { kind: "clear" };
+    case "/new":
+      return { kind: "new" };
+    case "/chats":
+      return { kind: "chats" };
+    case "/switch":
+    case "/s": {
+      if (tokens.length < 1) {
+        return { kind: "unknown", raw: trimmed, reason: "/switch requires a project name or path" };
+      }
+      return { kind: "switch", project: tokens[0]! };
+    }
+    case "/chat": {
+      return { kind: "chat", project: tokens[0] };
+    }
+    case "/drafts":
+      return { kind: "drafts" };
+    case "/approve-draft":
+    case "/ad": {
+      if (tokens.length < 2) {
+        return { kind: "unknown", raw: trimmed, reason: "/approve-draft requires <project> <agent>" };
+      }
+      return { kind: "approveDraft", project: tokens[0]!, name: tokens[1]! };
+    }
+    case "/reject-draft":
+    case "/rd": {
+      if (tokens.length < 2) {
+        return { kind: "unknown", raw: trimmed, reason: "/reject-draft requires <project> <agent>" };
+      }
+      return { kind: "rejectDraft", project: tokens[0]!, name: tokens[1]! };
+    }
+    case "/approve-all-drafts":
+      return { kind: "approveAllDrafts", project: tokens[0] };
+    case "/reject-all-drafts":
+      return { kind: "rejectAllDrafts", project: tokens[0] };
     case "/quit":
     case "/exit":
       return { kind: "quit" };
@@ -170,11 +231,21 @@ export const HELP_TEXT = `SophronSwarm V3 — TUI commands:
   /advance             Mark the current checkpoint complete + advance
   /cost                Show MCP token-cost meter
   /memory [agent]      Show per-agent memory (or shared if no agent)
-  /run <agent> "<t>"   Run an agent on a task
-  /model <agent> <id>  Change an agent's model for this session
-  /approve <id> y|n    Resolve a pending approval
+  /run <agent> "<t>"              Run an agent on a task
+  /run <project>/<agent> "<t>"    Run an agent in another project (no cd)
+  /model <agent> <id>             Change an agent's model for this session
+  /approve <id> y|n               Resolve a pending tool approval
+  /drafts                         List pending agent drafts across projects
+  /approve-draft <p> <a>          Approve a pending agent draft
+  /reject-draft <p> <a>           Reject a pending agent draft
+  /approve-all-drafts [p]         Approve all pending drafts (optionally per project)
   /rewind <runId>      Rewind to a prior checkpoint
+  /checkpoints ["A" ...]  List or replace project milestones
   /clear               Clear the output log
+  /new                 Start a new chat thread (global or project)
+  /chats               Show saved chat threads
+  /switch <project>    Jump to a project (cached, no cd needed)
+  /chat [project]      Open a project's chat tab
   /help                Show context-aware help
   /quit                Exit
 

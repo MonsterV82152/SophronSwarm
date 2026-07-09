@@ -18,9 +18,11 @@
  *
  * See docs/ROADMAP.md (M6) + docs/IDEAS.md §6 Piece 2 + docs/PHASE_6_DESIGN.md §3.
  */
+import { resolve } from "node:path";
 import { log } from "../../util/log.js";
 import { AgentDraftStore } from "../../agent/drafts.js";
 import { serializeDraft, type DraftFields } from "../../agent/serialize.js";
+import { sophronRoot } from "./global.js";
 import type { ToolSpec } from "../schema.js";
 
 /** Soft cap (warn, don't block) — matches the registry warn (§5.1). */
@@ -32,7 +34,7 @@ interface RosterAgentSpec {
   description: string;
   systemPrompt: string;
   tools?: string[];
-  model?: string;
+  model: string;
   permissionMode?: string;
   delegateAllowlist?: string[];
   mcpServers?: string[];
@@ -56,6 +58,7 @@ function serializeRosterEntry(spec: unknown): { name: string; content: string } 
   const name = requireString(e["name"], "name");
   const description = requireString(e["description"], "description", name);
   const systemPrompt = requireString(e["systemPrompt"], "systemPrompt", name);
+  const model = requireString(e["model"], "model", name);
 
   const permissionMode = typeof e["permissionMode"] === "string" ? e["permissionMode"] : "default";
   if (permissionMode === "full-auto") {
@@ -69,7 +72,7 @@ function serializeRosterEntry(spec: unknown): { name: string; content: string } 
     description,
     systemPrompt,
     tools: e["tools"],
-    model: e["model"],
+    model,
     permissionMode,
     delegateAllowlist: e["delegateAllowlist"],
     mcpServers: e["mcpServers"],
@@ -92,6 +95,10 @@ export const propose_roster: ToolSpec = {
         type: "string",
         description: "A one-or-two-line rationale for this roster (shown to the operator at the approval gate).",
       },
+      projectPath: {
+        type: "string",
+        description: "Optional absolute project path to write drafts into. Use when the architect is invoked by the global orchestrator before the project exists; defaults to the current workspace.",
+      },
       agents: {
         type: "array",
         description: "The full roster of agents to draft (one object per agent).",
@@ -102,7 +109,7 @@ export const propose_roster: ToolSpec = {
             description: { type: "string", description: "One-line description of when to delegate to this agent." },
             systemPrompt: { type: "string", description: "The agent's system prompt (markdown body)." },
             tools: { type: "array", items: { type: "string" }, description: "Tool allowlist." },
-            model: { type: "string", description: "Model tier (cheap=small/routine, mid=general, frontier=hardest reasoning, inherit) or a concrete prefixed id like 'ollama:qwen3.5:9b'. Match the model to the task size — use 'cheap' for narrow/mechanical work and reserve 'frontier' for hard reasoning. Call list_providers first to see what is configured." },
+            model: { type: "string", description: "Concrete model id, optionally with a provider prefix (e.g. 'ollama:qwen3.5:9b' or 'openrouter:deepseek/deepseek-v4-flash'). Call list_providers first to see what is configured on this machine." },
             permissionMode: {
               type: "string",
               enum: ["default", "accept-edits", "auto", "plan", "full-auto"],
@@ -112,7 +119,7 @@ export const propose_roster: ToolSpec = {
             mcpServers: { type: "array", items: { type: "string" }, description: "MCP server names scoped to this agent." },
             maxTurns: { type: "integer", description: "Hard cap on loop iterations." },
           },
-          required: ["name", "description", "systemPrompt"],
+          required: ["name", "description", "systemPrompt", "model"],
         },
       },
     },
@@ -139,10 +146,16 @@ export const propose_roster: ToolSpec = {
     const dup = names.find((n, i) => names.indexOf(n) !== i);
     if (dup) return `Refused: duplicate agent name '${dup}' in the roster.`;
 
-    const store = new AgentDraftStore(state.workingDir);
+    const projectPath = typeof args["projectPath"] === "string" ? resolve(args["projectPath"]) : state.workingDir;
+    if (projectPath === sophronRoot() && typeof args["projectPath"] !== "string") {
+      return "Refused: propose_roster must be run inside a project workspace. " +
+        "If the global orchestrator delegated this, call propose_roster with " +
+        "`projectPath` set to the target project directory.";
+    }
+    const store = new AgentDraftStore(projectPath);
     try {
       const entries = store.writeRoster(roster);
-      const approved = services.agentRegistry.scan().agents.length;
+      const approved = services.agentRegistry.listProjectAgents().length;
       const after = approved + entries.length;
       const capWarn = after > ROSTER_SOFT_CAP
         ? `\nNote: the resulting roster (${after} agents) exceeds the soft cap of ${ROSTER_SOFT_CAP}. The registry will warn on load.`

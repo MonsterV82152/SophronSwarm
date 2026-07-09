@@ -150,4 +150,26 @@ export class CheckpointManager {
     log.info({ from: completed?.title ?? "(start)", to: next.title }, "checkpoint advanced");
     return { advanced: true, current: next, completed, milestones };
   }
+
+  /**
+   * Replace the entire milestone list. All new milestones start unchecked.
+   * The first milestone becomes the current checkpoint. Use this when the
+   * orchestrator needs to align checkpoints with a freshly compiled plan.
+   */
+  replaceCheckpoints(titles: string[]): AdvanceResult {
+    const milestones = titles
+      .filter((t) => t.trim() !== "")
+      .map((title, i) => ({ index: i + 1, title: title.trim(), done: false }));
+    if (milestones.length === 0) {
+      this.store.write(SHARED_FILES.CHECKPOINTS, "# Checkpoints\n\n");
+      this.store.write(SHARED_FILES.CURRENT_CHECKPOINT, "# Current Checkpoint\n\n(no milestones set)\n");
+      return { advanced: false, current: null, completed: null, reason: "All milestones removed.", milestones };
+    }
+    const doc = serializeCheckpoints(milestones, "# Checkpoints");
+    this.store.write(SHARED_FILES.CHECKPOINTS, doc);
+    const first = milestones[0]!;
+    this.store.write(SHARED_FILES.CURRENT_CHECKPOINT, `# Current Checkpoint\n\n${first.title}\n`);
+    log.info({ count: milestones.length, first: first.title }, "checkpoints replaced");
+    return { advanced: true, current: first, completed: null, milestones };
+  }
 }

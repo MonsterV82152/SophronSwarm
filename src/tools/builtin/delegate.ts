@@ -7,8 +7,10 @@
  *
  * See docs/PROJECT_OVERVIEW.md §4.3 (delegation).
  */
+import { resolve, isAbsolute } from "node:path";
 import { log } from "../../util/log.js";
 import { runAgent } from "../../agent/loop.js";
+import { workspaceRoot, sophronRoot } from "./global.js";
 import {
   buildChildCtx,
   buildHandoffPacket,
@@ -24,6 +26,15 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return v.trim();
 }
 
+function safeResolveWorkspace(path: string, allowedRoots: string[]): string {
+  const candidate = isAbsolute(path) ? resolve(path) : resolve(allowedRoots[0]!, path);
+  const roots = allowedRoots.map((r) => resolve(r));
+  for (const root of roots) {
+    if (candidate === root || candidate.startsWith(root + "/")) return candidate;
+  }
+  throw new Error(`Path '${path}' is outside allowed workspaces`);
+}
+
 export const delegate: ToolSpec = {
   name: "delegate",
   description:
@@ -32,7 +43,7 @@ export const delegate: ToolSpec = {
     "(file reads, build logs) never appears here. Only a concise summary returns. " +
     "Use when a task is better handled by a specialist (security review, UI design, " +
     "test writing, dependency management, etc.). " +
-    "The sub-agent inherits the current workspace.",
+    "The sub-agent inherits the current workspace unless you pass an explicit 'dir'.",
   parameters: {
     type: "object",
     properties: {
@@ -47,12 +58,24 @@ export const delegate: ToolSpec = {
           "Be explicit — the sub-agent starts with a fresh context and has no " +
           "memory of this conversation.",
       },
+      dir: {
+        type: "string",
+        description:
+          "Optional absolute working directory for the sub-agent. Use when the " +
+          "sub-agent needs to read/write files in a specific project (e.g. the " +
+          "architect drafting a project's roster). Must be under ~/sophron_workspace " +
+          "or ~/.sophron.",
+      },
     },
     required: ["agent", "task"],
   },
   handler: async ({ args, agent: callerAgent, state, services }) => {
     const targetName = requireString(args, "agent");
     const task = requireString(args, "task");
+    const dirArg = typeof args["dir"] === "string" ? (args["dir"] as string).trim() : "";
+    const workingDir = dirArg
+      ? safeResolveWorkspace(dirArg, [state.workingDir, workspaceRoot(), sophronRoot()])
+      : state.workingDir;
 
     // ── 1. Policy check (depth, cycle, allowlist) ─────────────────────────
     const policy = checkPolicy(targetName, callerAgent, state.delegationCtx);
@@ -63,7 +86,7 @@ export const delegate: ToolSpec = {
     // ── 2. Find target agent in the registry ──────────────────────────────
     const targetDef = services.agentRegistry.get(targetName);
     if (!targetDef) {
-      const available = services.agentRegistry.list().map((a) => a.name).join(", ");
+      const available = services.agentRegistry.listProjectAgents().map((a) => a.name).join(", ");
       return `Delegation failed: agent '${targetName}' not found. Available: ${available || "(none)"}`;
     }
 
@@ -86,7 +109,7 @@ export const delegate: ToolSpec = {
     const { state: subState } = await runAgent({
       agent: targetDef,
       task,
-      workingDir: state.workingDir,
+      workingDir,
       llm: services.llm,
       dispatcher: services.dispatcher,
       checkpointer: services.checkpointer,

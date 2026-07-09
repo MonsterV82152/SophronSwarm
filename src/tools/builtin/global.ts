@@ -27,6 +27,7 @@ import { join, resolve, relative, isAbsolute } from "node:path";
 import { listProjects, findByName, type ProjectEntry } from "../../project/registry.js";
 import { scaffoldProject, listTemplates, getTemplate } from "../../init/templates.js";
 import { SHARED_DIR_NAME } from "../../memory/sharedStore.js";
+import { AgentDraftStore } from "../../agent/drafts.js";
 import { listProviders } from "../../llm/providers.js";
 import type { ToolSpec } from "../schema.js";
 
@@ -175,6 +176,13 @@ export const propose_project: ToolSpec = {
         type: "string",
         description: "Constraints, non-goals, or feasibility notes. Seeded into OVERVIEW.md on init.",
       },
+      context: {
+        type: "string",
+        description:
+          "Comprehensive markdown summary of goals, requirements, vision, references, " +
+          "and any information gathered from files the operator provided. " +
+          "This is written into GOALS.md, REQUIREMENTS.md, and VISION.md on init.",
+      },
     },
     required: ["name", "summary"],
   },
@@ -184,6 +192,7 @@ export const propose_project: ToolSpec = {
     const template = typeof args["template"] === "string" ? (args["template"] as string).trim() : "minimal";
     const goal = typeof args["goal"] === "string" ? (args["goal"] as string).trim() : "";
     const constraints = typeof args["constraints"] === "string" ? (args["constraints"] as string).trim() : "";
+    const context = typeof args["context"] === "string" ? (args["context"] as string).trim() : "";
 
     if (!name) return "Refused: 'name' is required.";
     if (!summary) return "Refused: 'summary' is required.";
@@ -214,6 +223,7 @@ export const propose_project: ToolSpec = {
     ];
     if (goal) lines.push(`  goal:     ${goal}`);
     if (constraints) lines.push(`  constraints: ${constraints}`);
+    if (context) lines.push(`  context:  ${context.split("\n")[0]}${context.length > 80 ? "..." : ""}`);
     lines.push(
       ``,
       `This is a DRAFT. Nothing has been created. If the operator approves, run`,
@@ -241,6 +251,7 @@ export const init_project: ToolSpec = {
       force: { type: "boolean", description: "Overwrite an existing agents/ dir (default: refuse)." },
       goal: { type: "string", description: "Project goal to seed into OVERVIEW.md." },
       constraints: { type: "string", description: "Constraints to seed into OVERVIEW.md." },
+      context: { type: "string", description: "Comprehensive requirements/vision markdown to seed into GOALS.md, REQUIREMENTS.md, and VISION.md." },
     },
     required: ["name"],
   },
@@ -250,6 +261,7 @@ export const init_project: ToolSpec = {
     const force = args["force"] === true;
     const goal = typeof args["goal"] === "string" ? (args["goal"] as string).trim() : "";
     const constraints = typeof args["constraints"] === "string" ? (args["constraints"] as string).trim() : "";
+    const context = typeof args["context"] === "string" ? (args["context"] as string).trim() : "";
 
     if (!name) return "Refused: 'name' is required.";
     if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
@@ -261,18 +273,43 @@ export const init_project: ToolSpec = {
       // coerceToWorkspace guards against path traversal (belt-and-suspenders,
       // since `name` is validated above, but keep the invariant explicit).
       const abs = coerceToWorkspace(path);
+
+      // If a custom roster has already been drafted for this project, refuse to
+      // overwrite it with a built-in template's default agents.
+      if (template !== "minimal" && !force) {
+        const pending = new AgentDraftStore(abs).pendingDrafts();
+        if (pending.length > 0) {
+          return [
+            `Refused: ${pending.length} roster draft(s) exist for '${name}'.`,
+            `Use template 'minimal' so the drafted agents are not overwritten, or`,
+            `resolve the drafts first (e.g. 'sophron agents --approve-all --dir ${abs}').`,
+          ].join("\n");
+        }
+      }
+
       const result = scaffoldProject(abs, { template, name, force });
 
-      // If the operator captured a goal or constraints, rewrite OVERVIEW.md
-      // with a structured overview. Otherwise leave the template seed as-is.
-      if (goal || constraints) {
-        const overviewPath = join(abs, SHARED_DIR_NAME, "OVERVIEW.md");
+      // Write structured requirements/vision files if the operator provided them.
+      if (goal || constraints || context) {
+        const sharedDir = join(abs, SHARED_DIR_NAME);
+        const overviewPath = join(sharedDir, "OVERVIEW.md");
         const sections = ["# Project Overview", "", "## Goal", goal || "(to be refined by the project orchestrator)"];
         if (constraints) {
           sections.push("", "## Constraints", constraints);
         }
+        if (context) {
+          sections.push("", "## Requirements", "See REQUIREMENTS.md for the full requirements package.");
+        }
         sections.push("", "## Stack", "[To be filled by the per-project orchestrator]");
         writeFileSync(overviewPath, sections.join("\n") + "\n", "utf8");
+
+        if (goal) {
+          writeFileSync(join(sharedDir, "GOALS.md"), `# Goals\n\n${goal}\n`, "utf8");
+        }
+        if (context) {
+          writeFileSync(join(sharedDir, "REQUIREMENTS.md"), `# Requirements\n\n${context}\n`, "utf8");
+          writeFileSync(join(sharedDir, "VISION.md"), `# Vision\n\n${context}\n`, "utf8");
+        }
       }
 
       const agentList = result.created.agents.join(", ");
@@ -333,12 +370,12 @@ export const list_providers: ToolSpec = {
     lines.push("");
     lines.push(
       "Model field guidance for drafted agents:",
-      "  - Use a NAMED TIER to stay portable: 'cheap' (small/routine), 'mid' (general),",
-      "    'frontier' (hardest reasoning), 'inherit' (use the orchestrator's model).",
-      "  - Or a CONCRETE id with a provider prefix: 'ollama:qwen3.5:9b', 'zai:glm-4.6',",
-      "    'openrouter:anthropic/claude-sonnet-4'.",
-      "  - Match the model to the TASK SIZE: cheap for routine/build/test, mid for",
-      "    general features, frontier only for hard design/security work.",
+      "  - Use a CONCRETE model id, optionally with a provider prefix:",
+      "    'ollama:qwen3.5:9b', 'zai:glm-4.6', 'openrouter:anthropic/claude-sonnet-4'.",
+      "  - The provider prefix selects the endpoint; omit it only when a single provider",
+      "    is configured and its defaultModel is set.",
+      "  - Match the model to the TASK SIZE: smaller/faster models for routine/build/test,",
+      "    the strongest reasoning models only for hard design/security work.",
     );
 
     if (probe) {

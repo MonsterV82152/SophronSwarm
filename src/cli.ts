@@ -25,6 +25,7 @@ import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject, removeProject, renameProject, togglePin, listProjects, findByName } from "./project/registry.js";
 import { scaffoldProject, installGlobalArchitect, installGlobalOrchestrator, listTemplates } from "./init/templates.js";
 import { runAgent } from "./agent/loop.js";
+import { expandTaskWithAttachments } from "./prompt/attachments.js";
 import { log } from "./util/log.js";
 import { prompt, promptSelect, promptConfirm, promptSecret } from "./util/prompts.js";
 
@@ -65,20 +66,21 @@ export async function runCli(argv: string[]): Promise<void> {
       const workingDir = resolve(opts.dir);
 
       // ── Load agent ──────────────────────────────────────────────────────
-      const registry = new AgentRegistry();
+      const registry = new AgentRegistry(workingDir);
       const scan = registry.scan();
       for (const err of scan.errors) {
         console.warn(chalk.yellow(`agent load error: ${err.filePath}: ${err.error}`));
       }
+      const projectAgents = registry.listProjectAgents();
       const def = registry.get(agent);
       if (!def) {
         console.error(chalk.red(`Agent '${agent}' not found.`));
-        console.error(chalk.gray(`Available: ${scan.agents.map((a) => a.name).join(", ") || "(none)"}`));
+        console.error(chalk.gray(`Available: ${projectAgents.map((a) => a.name).join(", ") || "(none)"}`));
         process.exitCode = 1;
         return;
       }
-      if (scan.overCap) {
-        console.warn(chalk.yellow(`Warning: agent roster (${scan.agents.length}) exceeds soft cap of 12.`));
+      if (projectAgents.length > 12) {
+        console.warn(chalk.yellow(`Warning: agent roster (${projectAgents.length}) exceeds soft cap of 12.`));
       }
 
       // ── Wire dependencies ──────────────────────────────────────────────
@@ -86,9 +88,10 @@ export async function runCli(argv: string[]): Promise<void> {
 
       try {
         const modelOverride = opts.model ? resolveModelSpec(opts.model) : undefined;
+        const { task: expandedTask } = expandTaskWithAttachments(task, workingDir, [workingDir]);
         const { state } = await runAgent({
           agent: def,
-          task,
+          task: expandedTask,
           workingDir,
           llm: services.llm,
           dispatcher: services.dispatcher,
@@ -120,14 +123,14 @@ export async function runCli(argv: string[]): Promise<void> {
     .argument("<spec>", "model spec (tier, provider:model, or bare id)")
     .option("-d, --dir <path>", "working directory (where agents/ lives)", process.cwd())
     .action(async (agent: string, spec: string, opts: { dir: string }) => {
-      process.chdir(resolve(opts.dir));
+      const workingDir = resolve(opts.dir);
 
-      const registry = new AgentRegistry();
-      const scan = registry.scan();
+      const registry = new AgentRegistry(workingDir);
+      registry.scan();
       const def = registry.get(agent);
       if (!def) {
         console.error(chalk.red(`Agent '${agent}' not found.`));
-        console.error(chalk.gray(`Available: ${scan.agents.map((a) => a.name).join(", ") || "(none)"}`));
+        console.error(chalk.gray(`Available: ${registry.listProjectAgents().map((a) => a.name).join(", ") || "(none)"}`));
         process.exitCode = 1;
         return;
       }
@@ -150,7 +153,7 @@ export async function runCli(argv: string[]): Promise<void> {
       const workingDir = resolve(opts.dir);
       // Register this project so it appears in the switcher / overview.
       registerProject(workingDir);
-      const registry = new AgentRegistry();
+      const registry = new AgentRegistry(workingDir);
       registry.scan();
       registry.startWatch();
       const services = buildServices(workingDir, registry);
@@ -180,6 +183,7 @@ export async function runCli(argv: string[]): Promise<void> {
       rejectAll?: boolean;
     }) => {
       const workingDir = resolve(opts.dir);
+      const registry = new AgentRegistry(workingDir);
       const store = new AgentDraftStore(workingDir);
 
       // ── Draft-management paths (M6) ────────────────────────────────────
@@ -246,12 +250,12 @@ export async function runCli(argv: string[]): Promise<void> {
       }
 
       // ── Default: list loaded agents ────────────────────────────────────
-      const registry = new AgentRegistry();
       const scan = registry.scan();
-      if (scan.agents.length === 0) {
+      const projectAgents = registry.listProjectAgents();
+      if (projectAgents.length === 0) {
         console.log(chalk.gray("No agents loaded. Add a .md file under agents/ or ~/.sophron/agents/."));
       } else {
-        for (const a of scan.agents) {
+        for (const a of projectAgents) {
           console.log(chalk.bold(a.name) + chalk.gray(`  [${a.source}]  ${a.model}`));
           console.log(chalk.gray(`  ${a.description}`));
         }
@@ -718,9 +722,9 @@ export async function runCli(argv: string[]): Promise<void> {
       if (opts.installArchitect) {
         const written = installGlobalArchitect(opts.force);
         if (written) {
-          console.log(chalk.green(`✓ Installed global architect → ${written}`));
+          console.log(chalk.green(`✓ Installed/updated global architect → ${written}`));
         } else {
-          console.log(chalk.yellow("Global architect already exists (use --force to overwrite)."));
+          console.log(chalk.yellow("Global architect is already up to date (use --force to overwrite)."));
         }
         return;
       }
@@ -729,9 +733,9 @@ export async function runCli(argv: string[]): Promise<void> {
       if (opts.installOrchestrator) {
         const written = installGlobalOrchestrator(opts.force);
         if (written) {
-          console.log(chalk.green(`✓ Installed global orchestrator → ${written}`));
+          console.log(chalk.green(`✓ Installed/updated global orchestrator → ${written}`));
         } else {
-          console.log(chalk.yellow("Global orchestrator already exists (use --force to overwrite)."));
+          console.log(chalk.yellow("Global orchestrator is already up to date (use --force to overwrite)."));
         }
         return;
       }

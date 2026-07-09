@@ -39,7 +39,7 @@ describe("resolveModelTarget", () => {
   });
 
   it("uses the open agent detail when no explicit agent is given", () => {
-    const nav = makeNav({ surface: "project", projectTabIndex: 1, agentDetail: "builder" });
+    const nav = makeNav({ surface: "project", projectTabIndex: 2, agentDetail: "builder" });
     const model = makeModel();
     expect(resolveModelTarget(nav, model)).toBe("builder");
   });
@@ -51,7 +51,7 @@ describe("resolveModelTarget", () => {
   });
 
   it("resolves to the selected agent on the Agents tab", () => {
-    const nav = makeNav({ surface: "project", projectTabIndex: 1, agentsIndex: 1 }); // agents tab
+    const nav = makeNav({ surface: "project", projectTabIndex: 2, agentsIndex: 1 }); // agents tab
     const model = makeModel([
       { name: "builder", model: "x", description: "", source: "project" },
       { name: "tester", model: "x", description: "", source: "project" },
@@ -66,7 +66,7 @@ describe("resolveModelTarget", () => {
   });
 
   it("returns null on Agents tab when the list is empty", () => {
-    const nav = makeNav({ surface: "project", projectTabIndex: 1 });
+    const nav = makeNav({ surface: "project", projectTabIndex: 2 });
     const model = makeModel([]);
     expect(resolveModelTarget(nav, model)).toBeNull();
   });

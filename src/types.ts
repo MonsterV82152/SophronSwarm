@@ -17,15 +17,6 @@ export type PermissionMode =
   | "full-auto"; // sandboxed, no prompts (Phase 6)
 
 /**
- * Model tier: a named abstraction resolved at runtime to a concrete provider
- * model id via the operator's config. Allows e.g. swapping the "frontier" model
- * without editing every agent definition.
- *
- * Can also be a concrete model id string directly.
- */
-export type ModelTier = "inherit" | "frontier" | "mid" | "cheap" | (string & {});
-
-/**
  * A runtime model override: concrete model id + optional named provider instance.
  * Used by `/model` slash commands and `sophron run --model` to temporarily change
  * an agent's model without editing its definition file.
@@ -46,12 +37,10 @@ export interface AgentDefinition {
   tools?: string[];
   /** Tool denylist, applied before the allowlist. */
   disallowedTools?: string[];
-  /** Resolved concrete model id (e.g. "anthropropic/claude-sonnet-4"). */
+  /** Model identifier: a concrete id, optionally with a provider prefix (e.g. "ollama:qwen3.5:9b" or "openrouter:deepseek/deepseek-v4-flash"). */
   model: string;
   /** Provider that serves `model` (resolved alongside it at load time). */
   provider?: import("./llm/providers.js").ProviderName;
-  /** Original tier before resolution (for display / re-resolution). */
-  modelTier: ModelTier;
   permissionMode: PermissionMode;
   /** MCP servers scoped to this agent (Phase 4). */
   mcpServers?: (string | Record<string, unknown>)[];

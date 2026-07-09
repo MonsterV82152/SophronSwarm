@@ -37,7 +37,7 @@ export const propose_agent: ToolSpec = {
       description: { type: "string", description: "One-line description of when to delegate to this agent." },
       systemPrompt: { type: "string", description: "The agent's system prompt (markdown body)." },
       tools: { type: "array", items: { type: "string" }, description: "Tool allowlist." },
-      model: { type: "string", description: "Model tier (cheap=small/routine, mid=general, frontier=hardest reasoning, inherit) or a concrete prefixed id like 'ollama:qwen3.5:9b'. Match the model to the task size — use 'cheap' for narrow/mechanical work and reserve 'frontier' for hard reasoning. Call list_providers first to see what is configured." },
+      model: { type: "string", description: "Concrete model id, optionally with a provider prefix (e.g. 'ollama:qwen3.5:9b' or 'openrouter:deepseek/deepseek-v4-flash'). Call list_providers first to see what is configured on this machine." },
       permissionMode: {
         type: "string",
         enum: ["default", "accept-edits", "auto", "plan", "full-auto"],
@@ -47,12 +47,13 @@ export const propose_agent: ToolSpec = {
       mcpServers: { type: "array", items: { type: "string" }, description: "MCP server names scoped to this agent." },
       maxTurns: { type: "integer", description: "Hard cap on loop iterations." },
     },
-    required: ["name", "description", "systemPrompt"],
+    required: ["name", "description", "systemPrompt", "model"],
   },
   handler: ({ args, state, services }) => {
     const name = requireString(args, "name");
     const description = requireString(args, "description");
     const systemPrompt = requireString(args, "systemPrompt");
+    const model = requireString(args, "model");
 
     // Guardrail: drafts may not use full-auto (operator must explicitly enable it post-promotion).
     const permissionMode = typeof args["permissionMode"] === "string" ? args["permissionMode"] : "default";
@@ -66,7 +67,7 @@ export const propose_agent: ToolSpec = {
       description,
       systemPrompt,
       tools: args["tools"],
-      model: args["model"],
+      model,
       permissionMode,
       delegateAllowlist: args["delegateAllowlist"],
       mcpServers: args["mcpServers"],

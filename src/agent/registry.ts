@@ -17,6 +17,9 @@ import type { AgentDefinition } from "../types.js";
 
 const SOFT_CAP = 12; // see §9.4 of PROJECT_OVERVIEW.md — warn (not block) above this
 
+/** Agents that live in the user/global scope and should not appear in per-project rosters. */
+export const GLOBAL_AGENT_NAMES = new Set(["global-orchestrator", "architect"]);
+
 export interface ScanResult {
   agents: AgentDefinition[];
   errors: LoadAgentError[];
@@ -28,6 +31,8 @@ export class AgentRegistry {
   private byName = new Map<string, AgentDefinition>();
   private errors: LoadAgentError[] = [];
   private watcher?: FSWatcher;
+
+  constructor(private readonly projectRoot: string = process.cwd()) {}
 
   /** Scan both scopes and index agents. Returns the result + errors. */
   scan(): ScanResult {
@@ -55,6 +60,11 @@ export class AgentRegistry {
     return [...this.byName.values()];
   }
 
+  /** All loaded agents except user/global agents (for project-scoped views). */
+  listProjectAgents(): AgentDefinition[] {
+    return this.list().filter((a) => !(a.source === "user" && GLOBAL_AGENT_NAMES.has(a.name)));
+  }
+
   get(name: string): AgentDefinition | undefined {
     return this.byName.get(name);
   }
@@ -62,7 +72,7 @@ export class AgentRegistry {
   /** Directories to scan, highest priority first. */
   private scopeDirs(): { source: "project" | "user"; path: string }[] {
     return [
-      { source: "project", path: join(process.cwd(), "agents") },
+      { source: "project", path: join(this.projectRoot, "agents") },
       { source: "user", path: join(homedir(), ".sophron", "agents") },
     ];
   }
