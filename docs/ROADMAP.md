@@ -76,7 +76,7 @@ SophronSwarm (global)                          ← operator's home
 | **M11 — Runtime Model Switching (`/model`)** | ✅ Complete | runtime model override + `/model` slash command + default orchestrator/architect/global-orchestrator to `frontier`; 12 new tests |
 | **M12 — Global Orchestrator Project Context** | ✅ Complete | `read_project_overview` tool + goal/constraints in proposal/creation + richer discovery/handoff prompt; 7 new tests |
 | **M13 — Provider Descriptions** | ✅ Complete | `description` field on provider instances + CLI flags + surfaced in `list_providers`; 5 new tests |
-| **M14 — TUI Surface-Switch Render Cleanup** | 🔜 Planned | Small–Medium — eliminate visual artifacts when switching between Home and Project surfaces |
+| **M14 — TUI Surface-Switch Render Cleanup** | ✅ Complete | ANSI terminal clear + tighter remount key + stale-state reset; 4 new tests |
 
 ---
 
@@ -442,24 +442,26 @@ description, and the architect uses it when assigning models.
 
 ---
 
-### M14 — TUI Surface-Switch Render Cleanup 🔜
+### M14 — TUI Surface-Switch Render Cleanup ✅
 **Size:** Small–Medium  
-**Why now:** switching from the Project surface back to Home leaves visual
-artifacts on top of the current TUI, indicating Ink's remount key is not fully
+**Status:** Complete — 2026-07-08  
+**Why now:** switching from the Project surface back to Home left visual
+artifacts on top of the current TUI, indicating Ink's remount key was not fully
 clearing the previous buffer.
 
-**Scope:**
-- Reproduce the project→home artifact reliably.
-- Add an explicit terminal buffer clear around surface switches in
-  `src/tui/app.tsx` (e.g., on `goHome`, `enterProject`, and `switchProject`).
-  Use ANSI erase-in-display + home-cursor, guarded so it does not run in test
-  renderers.
-- Ensure state resets (`setBlocks([])`, `setMemoryContent("")`,
-  `setRunDetail(null)`) complete before the next frame, and tighten the content
-  area remount key so old components are fully unmounted.
-- Consider moving the static output log to Ink `<Static>` so historical lines
-  do not interfere with dynamic content height.
-- Add a regression test if feasible (Ink render snapshot or nav-action test).
+**What changed:**
+- Added `clearTerminal()` in `src/tui/clearTerminal.ts` — sends ANSI
+  `\x1b[2J\x1b[H` (erase display + home cursor), guarded by `isTTY` so it is a
+  no-op in `ink-testing-library` and other non-TTY environments.
+- Wired `clearTerminal(stdout)` into a `useEffect` in `src/tui/app.tsx` keyed
+  on `nav.surface` and `activeProjectName`. The same effect resets stale
+  surface state: `runDetail`, `memoryContent`, and `memoryLabel`.
+- Tightened the content-area remount key from
+  `${nav.surface}:${activeProjectName}` to include tab indices and detail
+  states, forcing a full unmount/remount whenever the visible surface changes
+  materially.
+- Added `tests/tui/clearTerminal.test.ts` with 4 regression tests covering TTY
+  writes, non-TTY guards, missing `write`, and the no-argument fallback.
 
 **Delivers:** clean, artifact-free transitions between Home and Project
 surfaces.
@@ -492,7 +494,7 @@ M9 (web UI) ── optional / parallel / deferred
 ## Starting point
 
 M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, **M12
-(global-orchestrator project context)**, and **M13 (provider descriptions)** are
-✅ complete. The remaining milestone is **M14**: TUI surface-switch render cleanup.
+(global-orchestrator project context)**, **M13 (provider descriptions)**, and
+**M14 (TUI surface-switch render cleanup)** are ✅ complete.
 **M9 (web UI)** remains deferred (CLI-first is locked) and can be picked up in
 parallel by a separate effort.

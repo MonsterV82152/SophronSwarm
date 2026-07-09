@@ -18,6 +18,7 @@ import { Box, Text, useInput, useApp, useStdout } from "ink";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseSlashCommand } from "./slashCommands.js";
+import { clearTerminal } from "./clearTerminal.js";
 import { resolveModelSpec } from "../llm/providers.js";
 import { helpForView, helpViewFor } from "./help.js";
 import { buildDashboard, buildOverview, readRunDetail, type OverviewModel, type RunDetail } from "./dashboard.js";
@@ -126,6 +127,28 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
     const id = blockIdRef.current++;
     setBlocks((prev) => [...prev.slice(-6), { id, text, color }]);
   }, []);
+
+  // ── Terminal clear helper (M14) ──
+  // Erases the full display and homes the cursor. Guarded so it does not run
+  // in Ink's test renderer (fake stdout) or other non-TTY environments.
+  // ── Surface/project switch cleanup (M14) ──
+  // When the operator switches surfaces or projects, erase the terminal buffer
+  // and reset surface-specific state so Ink cannot leave ghost lines from the
+  // previous view.
+  const prevSurfaceRef = useRef(nav.surface);
+  const prevProjectRef = useRef(activeProjectName);
+  useEffect(() => {
+    const surfaceChanged = prevSurfaceRef.current !== nav.surface;
+    const projectChanged = prevProjectRef.current !== activeProjectName;
+    prevSurfaceRef.current = nav.surface;
+    prevProjectRef.current = activeProjectName;
+    if (surfaceChanged || projectChanged) {
+      setRunDetail(null);
+      setMemoryContent("");
+      setMemoryLabel("shared memory files");
+      clearTerminal(stdout);
+    }
+  }, [nav.surface, activeProjectName, stdout]);
 
   // ── Runtime model overrides (M11) ──
   // Keyed by agent name. Used by `/model` and surfaced in Agent detail.
@@ -528,10 +551,10 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       </Box>
 
       {/* ── Content area ── */}
-      {/* key forces a full remount on surface/project change so Ink clears the
-          previous content's lines completely (avoids ghost lines bleeding from
-          one surface/project into the next). */}
-      <Box key={`${nav.surface}:${activeProjectName}`} flexDirection="column" flexGrow={1}>
+      {/* key forces a full remount on surface/project/tab/detail change so Ink
+          clears the previous content's lines completely (avoids ghost lines
+          bleeding from one surface/project into the next). */}
+      <Box key={`${nav.surface}:${activeProjectName}:${nav.homeTabIndex}:${nav.projectTabIndex}:${nav.agentDetail ?? ""}:${nav.runDetail ?? ""}`} flexDirection="column" flexGrow={1}>
         {isHome ? (
           <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
         ) : (
