@@ -85,6 +85,7 @@ SophronSwarm (global)                          ← operator's home
 | **M16 — Environment-Sensitive `/model`** | ✅ Complete | `/model <spec>` infers target from agent detail / agents tab / global orchestrator; 6 new tests |
 | **M17 — Global Orchestrator `/model` Help** | ✅ Complete | `/model <spec>` documented in orchestrator + agents help; help tests updated |
 | **M18 — Persistent `/model` Updates** | ✅ Complete | `/model` writes resolved model/provider back to the agent `.md` file; `updateAgentModelFile` utility + tests |
+| **M19 — Orchestrator Chat History** | 📦 Planned | Multiple saved chats with the global orchestrator; ↑/↓ list of chat titles; enter to continue a prior chat |
 
 ---
 
@@ -569,6 +570,27 @@ reload with the new model on the next registry scan.
 
 ---
 
+### M19 — Orchestrator Chat History 📦
+**Size:** Medium  
+**Status:** Planned — 2026-07-08  
+**Why:** The global orchestrator currently has exactly one in-memory chat thread
+per TUI session. Operators want to maintain multiple parallel project-planning
+conversations, revisit previous chats, and continue them.
+
+**Spec:**
+- Persist orchestrator chat threads to disk (e.g. `~/.sophron/chats/<thread-id>.jsonl`)
+  with a human-readable title derived from the first user message.
+- In the Home › Orchestrator tab, ↑/↓ navigate a list of saved chat titles
+  (replacing the current non-navigable chat view when in "list mode").
+- Pressing Enter on a title opens that chat and resumes the conversation.
+- A slash command or keybinding creates a new chat thread.
+- Chat content is still **not injected as project memory**; persisted threads are
+  purely for operator convenience.
+
+**Delivers:** Claude-Code/Codex-style chat history for the global orchestrator.
+
+---
+
 ## Dependency graph
 
 ```
@@ -589,6 +611,7 @@ M15 (single-page render) ── builds on M3 + M14
 M16 (context /model) ── builds on M3 + M11 (/model)
 M17 (orchestrator /model help) ── builds on M7 + M16
 M18 (persistent /model) ── builds on M11 + M16 + agent loader
+M19 (orchestrator chat history) ── builds on M7 + M8
 
 M9 (web UI) ── optional / parallel / deferred
 ```
@@ -603,5 +626,6 @@ M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, **
 (TUI surface-switch render cleanup)**, **M15 (TUI single-page render fix)**,
 **M16 (environment-sensitive `/model`)**, **M17 (global orchestrator `/model`
 help)**, and **M18 (persistent `/model` updates)** are ✅ complete.
+**M19 (orchestrator chat history)** is 📦 planned next.
 **M9 (web UI)** remains deferred (CLI-first is locked) and can be picked up in
 parallel by a separate effort.

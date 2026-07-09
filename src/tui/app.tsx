@@ -129,10 +129,20 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   // Use a ref to maintain a monotonically increasing ID counter for output blocks.
   // This prevents duplicate keys when the array is sliced to keep only the last 6 items.
   const blockIdRef = useRef(0);
-  const pushBlock = useCallback((text: string, color?: string) => {
-    const id = blockIdRef.current++;
-    setBlocks((prev) => [...prev.slice(-6), { id, text, color }]);
-  }, []);
+  const pushBlock = useCallback(
+    (text: string, color?: string) => {
+      const onOrchestrator = nav.surface === "home" && activeHomeTab(nav) === "orchestrator";
+      if (onOrchestrator) {
+        // Inline command feedback into the orchestrator chat so there is no
+        // separate output box in the chat view.
+        setOrchestratorMessages((prev) => [...prev, { id: nextMsgId(), role: "system" as const, text, color }]);
+      } else {
+        const id = blockIdRef.current++;
+        setBlocks((prev) => [...prev.slice(-6), { id, text, color }]);
+      }
+    },
+    [nav.surface, nav.homeTabIndex, nextMsgId],
+  );
 
   // ── Surface/project switch state cleanup ──
   // Reset surface-specific state when the operator switches surfaces or
@@ -272,10 +282,12 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       try {
         // Feed the prior chat turns as history so the orchestrator remembers the
         // current conversation without touching project memory stores.
-        const history: LLMMessage[] = orchestratorMessagesRef.current.map((m) => ({
-          role: m.role === "user" ? "user" : "assistant",
-          content: m.text,
-        }));
+        const history: LLMMessage[] = orchestratorMessagesRef.current
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role === "user" ? "user" : "assistant",
+            content: m.text,
+          }));
         const result = await runAgent({
           agent,
           task: text,
@@ -551,6 +563,11 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
   const activeProjectPath = projects.find((p) => p.name === activeProjectName)?.path ?? "";
+  const onOrchestrator = nav.surface === "home" && activeHomeTab(nav) === "orchestrator";
+  // Leave room for banner (6), divider, breadcrumb, tab bar, input bar, hint,
+  // borders/padding (~12) plus the chat chrome (~2). The cap grows/shrinks with
+  // the terminal so long conversations never overlap the chrome.
+  const chatMaxLines = Math.max(4, rows - 14);
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} height={rows - 1}>
@@ -581,15 +598,24 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         <TabBar labels={tabLabels} selectedIndex={tabIndex} focused={tabsFocused} />
       </Box>
 
-      {/* ── Content area + output log ── */}
+      {/* ── Content area ── */}
       {/* No remount key: React reconciles the content pane in place. Surface /
           project switches clear the terminal synchronously before the new
-          frame is painted, and the root Box is fixed to the terminal height.
-          The output log is rendered here so it appears inline with the active
-          view (e.g. combined with the orchestrator chat). */}
+          frame is painted, and the root Box is fixed to the terminal height. */}
       <Box flexDirection="column" flexGrow={1}>
         {isHome ? (
-          <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
+          <HomeContent
+            nav={nav}
+            overview={overview}
+            activeProjectName={activeProjectName}
+            projects={projects}
+            activeProjectPath={activeProjectPath}
+            onOrchestratorMessage={handleOrchestratorMessage}
+            orchestratorMessages={orchestratorMessages}
+            orchestratorRunning={orchestratorRunning}
+            orchestratorInstalled={orchestratorInstalled}
+            chatMaxLines={chatMaxLines}
+          />
         ) : (
           <ProjectContent
             nav={nav}
@@ -600,19 +626,20 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
             effectiveModelFor={effectiveModelFor}
           />
         )}
-
-        {/* ── Output log (command feedback) ── */}
-        {blocks.length > 0 ? (
-          <Box flexDirection="column" marginTop={1}>
-            <Text dimColor>── output ──</Text>
-            {blocks.slice(-4).map((b) => (
-              <Text key={b.id} color={b.color as "red" | "green" | "yellow" | "cyan" | "gray" | undefined}>
-                {b.text.length > cols - 8 ? `${b.text.slice(0, cols - 11)}...` : b.text}
-              </Text>
-            ))}
-          </Box>
-        ) : null}
       </Box>
+
+      {/* ── Output log (command feedback) ── */}
+      {/* Hidden on the Orchestrator tab: feedback is rendered inline in the chat. */}
+      {!onOrchestrator && blocks.length > 0 ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>── output ──</Text>
+          {blocks.slice(-4).map((b) => (
+            <Text key={b.id} color={b.color as "red" | "green" | "yellow" | "cyan" | "gray" | undefined}>
+              {b.text.length > cols - 8 ? `${b.text.slice(0, cols - 11)}...` : b.text}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
 
       {/* ── Footer: input bar ── */}
       <Box marginTop={1}>
@@ -638,6 +665,7 @@ function HomeContent({
   orchestratorMessages,
   orchestratorRunning,
   orchestratorInstalled,
+  chatMaxLines,
 }: {
   nav: NavState;
   overview: OverviewModel;
@@ -648,6 +676,7 @@ function HomeContent({
   orchestratorMessages: ChatMessage[];
   orchestratorRunning: boolean;
   orchestratorInstalled: boolean;
+  chatMaxLines: number;
 }) {
   const tab = activeHomeTab(nav);
   if (tab === "overview") {
@@ -660,6 +689,7 @@ function HomeContent({
         running={orchestratorRunning}
         installed={orchestratorInstalled}
         onSubmit={onOrchestratorMessage}
+        maxLines={chatMaxLines}
       />
     );
   }
