@@ -14,7 +14,7 @@ describe("clearTerminal", () => {
   it("writes ANSI erase-screen + home-cursor on a real TTY", () => {
     const { stream, writes } = fakeStream();
     clearTerminal(stream);
-    expect(writes).toEqual(["\x1b[2J\x1b[H"]);
+    expect(writes).toEqual(["\x1b[2J\x1b[3J\x1b[H"]);
   });
 
   it("is a no-op when stdout is not a TTY", () => {

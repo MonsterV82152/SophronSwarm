@@ -19,4 +19,5 @@ export const log = pino(
         },
       }
     : { level },
+  pino.destination(2),
 );

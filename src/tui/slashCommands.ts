@@ -86,7 +86,7 @@ export function parseSlashCommand(input: string): SlashCommand {
         return {
           kind: "unknown",
           raw: trimmed,
-          reason: "/model requires <agent> <model-spec> (or just <model-spec> when viewing an agent)",
+          reason: "/model requires <model-spec> (agent is inferred in agent/orchestrator views) or <agent> <model-spec>",
         };
       }
       if (tokens.length === 1) {

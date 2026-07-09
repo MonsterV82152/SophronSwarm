@@ -245,7 +245,33 @@ describe("defaultForKind", () => {
 });
 
 describe("resolveModel", () => {
-  beforeEach(() => _resetProviderCacheForTests());
+  let home: string;
+  let prevHome: string | undefined;
+  const envKeys = ["OPENROUTER_API_KEY", "OPENROUTER_DEFAULT_MODEL", "ZAI_API_KEY", "ZAI_DEFAULT_MODEL", "OLLAMA_BASE_URL", "OLLAMA_API_KEY", "OLLAMA_DEFAULT_MODEL"];
+  let envSnapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    _resetProviderCacheForTests();
+    home = mkdtempSync(join(tmpdir(), "sophron-resolve-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    envSnapshot = {};
+    for (const k of envKeys) {
+      envSnapshot[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    for (const k of envKeys) {
+      if (envSnapshot[k] !== undefined) process.env[k] = envSnapshot[k];
+      else delete process.env[k];
+    }
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
 
   it("prefix ollama: → default ollama instance + stripped model id", () => {
     const r = resolveModel("ollama:llama3.2:1b");
@@ -270,8 +296,6 @@ describe("resolveModel", () => {
     _resetProviderCacheForTests();
     const r = resolveModel("inherit");
     expect(r.model).toBe("qwen3.5:9b");
-    delete process.env["OLLAMA_DEFAULT_MODEL"];
-    _resetProviderCacheForTests();
   });
 
   it("tier override → resolves through the tier map", () => {
@@ -282,22 +306,43 @@ describe("resolveModel", () => {
     _resetProviderCacheForTests();
     const r = resolveModel("some-unknown-tier");
     expect(r.model).toBe("fallback-model");
-    delete process.env["OLLAMA_DEFAULT_MODEL"];
-    _resetProviderCacheForTests();
   });
 
   it("throws when no provider can resolve the tier", () => {
     // No env defaults, no config → nothing resolves.
-    for (const k of ["OPENROUTER_API_KEY", "OPENROUTER_DEFAULT_MODEL", "ZAI_API_KEY", "ZAI_DEFAULT_MODEL", "OLLAMA_DEFAULT_MODEL"]) {
-      delete process.env[k];
-    }
     _resetProviderCacheForTests();
     expect(() => resolveModel("inherit")).toThrow(/Could not resolve model tier/);
   });
 });
 
 describe("resolveModelWithProvider", () => {
-  beforeEach(() => _resetProviderCacheForTests());
+  let home: string;
+  let prevHome: string | undefined;
+  const envKeys = ["OPENROUTER_API_KEY", "OPENROUTER_DEFAULT_MODEL", "ZAI_API_KEY", "ZAI_DEFAULT_MODEL", "OLLAMA_BASE_URL", "OLLAMA_API_KEY", "OLLAMA_DEFAULT_MODEL"];
+  let envSnapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    _resetProviderCacheForTests();
+    home = mkdtempSync(join(tmpdir(), "sophron-resolvewp-"));
+    prevHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    envSnapshot = {};
+    for (const k of envKeys) {
+      envSnapshot[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    if (prevHome !== undefined) process.env["HOME"] = prevHome;
+    else delete process.env["HOME"];
+    for (const k of envKeys) {
+      if (envSnapshot[k] !== undefined) process.env[k] = envSnapshot[k];
+      else delete process.env[k];
+    }
+    rmSync(home, { recursive: true, force: true });
+    _resetProviderCacheForTests();
+  });
 
   it("uses the explicit provider name and trusts the model id", () => {
     const r = resolveModelWithProvider("any-model-id", "ollama");
@@ -314,8 +359,6 @@ describe("resolveModelWithProvider", () => {
     _resetProviderCacheForTests();
     const r = resolveModelWithProvider("inherit");
     expect(r.model).toBe("fb-model");
-    delete process.env["OLLAMA_DEFAULT_MODEL"];
-    _resetProviderCacheForTests();
   });
 });
 

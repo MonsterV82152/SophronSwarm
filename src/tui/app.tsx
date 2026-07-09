@@ -19,7 +19,9 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseSlashCommand } from "./slashCommands.js";
 import { clearTerminal } from "./clearTerminal.js";
+import { resolveModelTarget } from "./modelTarget.js";
 import { resolveModelSpec } from "../llm/providers.js";
+import { updateAgentModelFile } from "../agent/updateModel.js";
 import { helpForView, helpViewFor } from "./help.js";
 import { buildDashboard, buildOverview, readRunDetail, type OverviewModel, type RunDetail } from "./dashboard.js";
 import { CheckpointManager } from "../memory/checkpoints.js";
@@ -128,13 +130,9 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
     setBlocks((prev) => [...prev.slice(-6), { id, text, color }]);
   }, []);
 
-  // ── Terminal clear helper (M14) ──
-  // Erases the full display and homes the cursor. Guarded so it does not run
-  // in Ink's test renderer (fake stdout) or other non-TTY environments.
-  // ── Surface/project switch cleanup (M14) ──
-  // When the operator switches surfaces or projects, erase the terminal buffer
-  // and reset surface-specific state so Ink cannot leave ghost lines from the
-  // previous view.
+  // ── Surface/project switch state cleanup ──
+  // Reset surface-specific state when the operator switches surfaces or
+  // projects so stale detail/memory/run data cannot bleed into the new view.
   const prevSurfaceRef = useRef(nav.surface);
   const prevProjectRef = useRef(activeProjectName);
   useEffect(() => {
@@ -146,9 +144,8 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       setRunDetail(null);
       setMemoryContent("");
       setMemoryLabel("shared memory files");
-      clearTerminal(stdout);
     }
-  }, [nav.surface, activeProjectName, stdout]);
+  }, [nav.surface, activeProjectName]);
 
   // ── Runtime model overrides (M11) ──
   // Keyed by agent name. Used by `/model` and surfaced in Agent detail.
@@ -168,20 +165,36 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
     (agentName: string, spec: string): boolean => {
       try {
         const resolved = resolveModelSpec(spec);
+        // Persist the change to the agent's .md file so it survives the session.
+        const agent = registry.get(agentName);
+        if (agent?.filePath) {
+          updateAgentModelFile(agent.filePath, resolved);
+          pushBlock(`Updated ${agentName} model file: ${resolved.model} [${resolved.provider}]`, "green");
+        } else {
+          pushBlock(`Model override set for ${agentName}: ${resolved.model} [${resolved.provider}] (file not available)`, "yellow");
+        }
+        // Also keep the runtime override so the very next run uses it immediately,
+        // even before the file watcher rescans.
         setModelOverrides((prev) => ({ ...prev, [agentName]: resolved }));
-        pushBlock(`Model override set for ${agentName}: ${resolved.model} [${resolved.provider}]`, "green");
         return true;
       } catch (e) {
         pushBlock(`Could not set model for ${agentName}: ${(e as Error).message}`, "red");
         return false;
       }
     },
-    [pushBlock],
+    [pushBlock, registry],
   );
 
   // Dispatch a nav action (clamps list selections against current data sizes).
+  // Surface-changing actions clear the terminal synchronously first so Ink
+  // paints the new frame onto a blank screen instead of stacking it.
   const dispatch = useCallback(
     (action: NavAction) => {
+      const changesSurface =
+        action.kind === "goHome" ||
+        action.kind === "enterProject" ||
+        (action.kind === "exitUp" && nav.surface === "project" && nav.focus === "tabs");
+      if (changesSurface) clearTerminal(stdout);
       const projects = listProjects();
       setNav((prev) =>
         navReducer(prev, action, {
@@ -191,12 +204,15 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         }),
       );
     },
-    [model.agents.length, model.recentRuns.length],
+    [model.agents.length, model.recentRuns.length, nav.surface, nav.focus, stdout],
   );
 
   // ── Project switching (teardown + rebuild services) ──
   const switchProject = useCallback(
     async (projectPath: string) => {
+      // Clear the terminal (including scrollback) before rebuilding so the new
+      // project frame replaces the previous one instead of stacking below it.
+      clearTerminal(stdout);
       const absPath = resolve(projectPath);
       setSwitching(true);
       pushBlock(`Switching to ${absPath}…`, "yellow");
@@ -222,7 +238,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         setSwitching(false);
       }
     },
-    [services, registry, pushBlock],
+    [services, registry, pushBlock, stdout],
   );
 
   // ── Global orchestrator chat (M8) ──
@@ -274,7 +290,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         setOrchestratorRunning(false);
       }
     },
-    [registry, services, nextMsgId],
+    [registry, services, nextMsgId, modelOverrides],
   );
 
   // ── Open the selected list item (Enter in content focus) ──
@@ -335,6 +351,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
         }
         case "projects":
+          clearTerminal(stdout);
           setNav((p) => ({ ...p, surface: "home", homeTabIndex: HOME_TABS.indexOf("projects"), focus: "content", agentDetail: null, runDetail: null }));
           break;
         case "agents":
@@ -372,9 +389,10 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
         }
         case "model": {
-          const targetAgent = cmd.agent ?? nav.agentDetail;
+          // Resolve the target agent from context when no explicit agent is given.
+          const targetAgent = resolveModelTarget(nav, model, cmd.agent);
           if (!targetAgent) {
-            pushBlock("Enter an agent detail first, or use /model <agent> <spec>.", "yellow");
+            pushBlock("Use /model <spec> from an agent view, or /model <agent> <spec>.", "yellow");
             break;
           }
           applyModelOverride(targetAgent, cmd.spec);
@@ -412,7 +430,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
       }
     },
-    [nav.surface, nav.agentDetail, nav.homeTabIndex, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning, applyModelOverride],
+    [nav.surface, nav.agentDetail, nav.homeTabIndex, nav.projectTabIndex, nav.agentsIndex, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning, applyModelOverride, model],
   );
 
   // ── Keyboard input → nav actions ──
@@ -519,10 +537,11 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   const tabIndex = isHome ? nav.homeTabIndex : nav.projectTabIndex;
   const tabsFocused = nav.focus === "tabs";
   const cols = stdout?.columns ?? 80;
+  const rows = stdout?.rows ?? 24;
   const activeProjectPath = projects.find((p) => p.name === activeProjectName)?.path ?? "";
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} height={rows - 1}>
       {/* ── Header: ASCII banner ── */}
       <Banner version="SophronSwarm V3" />
 
@@ -551,10 +570,10 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       </Box>
 
       {/* ── Content area ── */}
-      {/* key forces a full remount on surface/project/tab/detail change so Ink
-          clears the previous content's lines completely (avoids ghost lines
-          bleeding from one surface/project into the next). */}
-      <Box key={`${nav.surface}:${activeProjectName}:${nav.homeTabIndex}:${nav.projectTabIndex}:${nav.agentDetail ?? ""}:${nav.runDetail ?? ""}`} flexDirection="column" flexGrow={1}>
+      {/* No remount key: React reconciles the content pane in place. Surface /
+          project switches clear the terminal synchronously before the new
+          frame is painted, and the root Box is fixed to the terminal height. */}
+      <Box flexDirection="column" flexGrow={1}>
         {isHome ? (
           <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
         ) : (
@@ -573,9 +592,9 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       {blocks.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           <Text dimColor>── output ──</Text>
-          {blocks.map((b) => (
+          {blocks.slice(-4).map((b) => (
             <Text key={b.id} color={b.color as "red" | "green" | "yellow" | "cyan" | "gray" | undefined}>
-              {b.text}
+              {b.text.length > cols - 8 ? `${b.text.slice(0, cols - 11)}...` : b.text}
             </Text>
           ))}
         </Box>
@@ -588,6 +607,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
 
       {/* ── Hint line ── */}
       <Text dimColor>{"  "}←/→ tabs · ↑/↓ list · Enter open · Esc back · type for input · Ctrl+C quit</Text>
+
     </Box>
   );
 }

@@ -77,6 +77,10 @@ SophronSwarm (global)                          ← operator's home
 | **M12 — Global Orchestrator Project Context** | ✅ Complete | `read_project_overview` tool + goal/constraints in proposal/creation + richer discovery/handoff prompt; 7 new tests |
 | **M13 — Provider Descriptions** | ✅ Complete | `description` field on provider instances + CLI flags + surfaced in `list_providers`; 5 new tests |
 | **M14 — TUI Surface-Switch Render Cleanup** | ✅ Complete | ANSI terminal clear + tighter remount key + stale-state reset; 4 new tests |
+| **M15 — TUI Single-Page Render Fix** | ✅ Complete | remove content remount key + `<Static>` output log; single-pane transitions |
+| **M16 — Environment-Sensitive `/model`** | ✅ Complete | `/model <spec>` infers target from agent detail / agents tab / global orchestrator; 6 new tests |
+| **M17 — Global Orchestrator `/model` Help** | ✅ Complete | `/model <spec>` documented in orchestrator + agents help; help tests updated |
+| **M18 — Persistent `/model` Updates** | ✅ Complete | `/model` writes resolved model/provider back to the agent `.md` file; `updateAgentModelFile` utility + tests |
 
 ---
 
@@ -468,6 +472,95 @@ surfaces.
 
 ---
 
+### M15 — TUI Single-Page Render Fix ✅
+**Size:** Small  
+**Status:** Complete — 2026-07-08  
+**Why now:** the TUI was rendering multiple overlapping frames and leaking
+command output outside the bordered box.
+
+**What changed:**
+- Removed the harmful `<Static>` wrapper around the output log in
+  `src/tui/app.tsx`; output now renders inside the main `<Box>` and is capped
+  to 4 lines + line-truncated to the terminal width.
+- Updated `clearTerminal()` in `src/tui/clearTerminal.ts` to erase both the
+  display and scrollback buffer (`\x1b[2J\x1b[3J\x1b[H`).
+- Moved terminal clearing from an asynchronous `useEffect` to **synchronous**
+  handlers: `dispatch()` clears before surface-changing nav actions,
+  `switchProject()` clears before rebuilding services, and the `/projects`
+  slash command clears before switching views.
+- Fixed the root `<Box>` to the terminal height (`height={stdout.rows}`) and
+  added a trailing flex-grow spacer so every render occupies the full screen,
+  overwriting any old content below the frame.
+- Added `tests/tui/app.render.test.tsx` smoke test asserting a single bordered
+  frame with no duplicate chrome.
+
+**Delivers:** exactly one TUI frame at a time; clean transitions between Home,
+Project, and projects; command output stays inside the border.
+
+---
+
+### M16 — Environment-Sensitive `/model` ✅
+**Size:** Small  
+**Status:** Complete — 2026-07-08  
+**Why now:** `/model <spec>` only worked from the Agent detail view; operators
+had to type the agent name everywhere else.
+
+**What changed:**
+- Added `resolveModelTarget()` in `src/tui/modelTarget.ts` to centralize target
+  inference: explicit agent → open agent detail → global orchestrator (on
+  Orchestrator tab) → selected agent (on Agents tab) → none.
+- Wired the resolver into `src/tui/app.tsx` so `/model <spec>` now changes the
+  agent implied by the current view without requiring a name.
+- Added `tests/tui/modelTarget.test.ts` with 6 unit tests covering explicit
+  agent, agent detail, orchestrator tab, agents tab, empty list, and no
+  context.
+
+**Delivers:** `/model <spec>` works from Agent detail, Agents tab, and the
+Global Orchestrator tab.
+
+---
+
+### M17 — Global Orchestrator `/model` Help ✅
+**Size:** Tiny  
+**Status:** Complete — 2026-07-08  
+**Why now:** the orchestrator help page did not document the now-working
+`/model <spec>` command.
+
+**What changed:**
+- Updated `CORE_HELP` in `src/tui/help.ts` to `/model [<agent>] <spec>` with a
+  note that the agent is inferred from context.
+- Added `/model <spec>` lines to `home:orchestrator` and `project:agents` view
+  help.
+- Extended `tests/tui/help.test.ts` to assert the new text appears.
+
+**Delivers:** `/model` is discoverable from the global orchestrator and agents
+list views.
+
+---
+
+### M18 — Persistent `/model` Updates ✅
+**Size:** Small  
+**Status:** Complete — 2026-07-08  
+**Why now:** `/model` only changed the runtime override; the agent reverted to
+its configured model on the next session unless the operator manually edited the
+`.md` file.
+
+**What changed:**
+- Added `updateAgentModelFile()` in `src/agent/updateModel.ts` to rewrite the
+  `model` (and `provider` when present) frontmatter field of an agent markdown
+  file using `gray-matter`.
+- Wired the utility into `applyModelOverride()` in `src/tui/app.tsx` so every
+  `/model` command persists the resolved model to the underlying `.md` file.
+- The runtime override is still updated immediately, so the very next TUI run
+  uses the new model even before the file watcher rescans.
+- Added `tests/agent/updateModel.test.ts` covering model updates and provider
+  removal.
+
+**Delivers:** `/model` changes survive restarts; agents reload with the new
+model on the next registry scan.
+
+---
+
 ## Dependency graph
 
 ```
@@ -484,6 +577,10 @@ M11 (model switching) ── builds on M2 (providers) + M3 (TUI) + M5/M7 (templa
 M12 (global orch context) ── builds on M7 (global orchestrator)
 M13 (provider descriptions) ── builds on M2 + M10 (provider CLI)
 M14 (TUI render cleanup) ── builds on M3 + M8 (home/project switching)
+M15 (single-page render) ── builds on M3 + M14
+M16 (context /model) ── builds on M3 + M11 (/model)
+M17 (orchestrator /model help) ── builds on M7 + M16
+M18 (persistent /model) ── builds on M11 + M16 + agent loader
 
 M9 (web UI) ── optional / parallel / deferred
 ```
@@ -494,7 +591,9 @@ M9 (web UI) ── optional / parallel / deferred
 ## Starting point
 
 M3–M8, **M10 (operator ergonomics)**, **M11 (runtime `/model` switching)**, **M12
-(global-orchestrator project context)**, **M13 (provider descriptions)**, and
-**M14 (TUI surface-switch render cleanup)** are ✅ complete.
+(global-orchestrator project context)**, **M13 (provider descriptions)**, **M14
+(TUI surface-switch render cleanup)**, **M15 (TUI single-page render fix)**,
+**M16 (environment-sensitive `/model`)**, **M17 (global orchestrator `/model`
+help)**, and **M18 (persistent `/model` updates)** are ✅ complete.
 **M9 (web UI)** remains deferred (CLI-first is locked) and can be picked up in
 parallel by a separate effort.

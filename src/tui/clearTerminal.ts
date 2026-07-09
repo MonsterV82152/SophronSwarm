@@ -8,5 +8,7 @@ export function clearTerminal(stdout?: NodeJS.WriteStream) {
   const target = stdout ?? process.stdout;
   if (!target || typeof target.write !== "function") return;
   if ((target as unknown as { isTTY?: boolean }).isTTY !== true) return;
-  target.write("\x1b[2J\x1b[H");
+  // Erase display + scrollback buffer, then home cursor. This prevents earlier
+  // TUI frames from remaining visible above or below the current render.
+  target.write("\x1b[2J\x1b[3J\x1b[H");
 }

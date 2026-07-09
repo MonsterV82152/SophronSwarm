@@ -261,9 +261,10 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("providers")
-    .description("List configured provider instances, or test connectivity for one")
-    .argument("[name]", "provider instance name to test (omit to list all)")
-    .action(async (name?: string) => {
+    .description("List configured provider instances, show details for one, or test connectivity")
+    .argument("[name]", "provider instance name (omit to list all)")
+    .option("-t, --test", "test connectivity for the named provider instead of showing details")
+    .action(async (name: string | undefined, opts: { test?: boolean }) => {
       const providers = listProviders();
       if (providers.length === 0) {
         console.log(chalk.gray("No providers configured. Add entries to ~/.sophron/config.json or set env defaults."));
@@ -277,11 +278,12 @@ export async function runCli(argv: string[]): Promise<void> {
           const model = p.defaultModel ? chalk.gray(p.defaultModel) : chalk.gray("(no default model)");
           console.log(`${chalk.bold(p.name)}  ${chalk.cyan(p.kind)}  ${chalk.gray(p.baseURL)}  ${creds}  ${model}`);
         }
-        console.log(chalk.gray(`\n${providers.length} instance(s). Test one with: sophron providers <name>`));
+        console.log(chalk.gray(`\n${providers.length} instance(s). Show details with: sophron providers <name>`));
+        console.log(chalk.gray(`Test connectivity with: sophron providers <name> --test`));
         return;
       }
 
-      // ── Test mode: ping GET /v1/models on the named instance ─────────────
+      // ── Detail mode (default when a name is given) ────────────────────────
       let cfg;
       try {
         cfg = getProvider(name);
@@ -290,6 +292,20 @@ export async function runCli(argv: string[]): Promise<void> {
         process.exitCode = 1;
         return;
       }
+
+      if (!opts.test) {
+        const keyDisplay = cfg.apiKey ? `${cfg.apiKey.slice(0, 4)}…${cfg.apiKey.slice(-4)}` : chalk.gray("(none)");
+        console.log(chalk.bold(`Provider: ${cfg.name}`));
+        console.log(`  kind:        ${chalk.cyan(cfg.kind)}`);
+        console.log(`  baseURL:     ${chalk.gray(cfg.baseURL)}`);
+        console.log(`  apiKey:      ${keyDisplay}`);
+        console.log(`  defaultModel:${cfg.defaultModel ? chalk.gray(cfg.defaultModel) : chalk.gray("(none)")}`);
+        console.log(`  description: ${cfg.description ? chalk.gray(cfg.description) : chalk.gray("(none)")}`);
+        console.log(chalk.gray(`\nTest connectivity with: sophron providers ${cfg.name} --test`));
+        return;
+      }
+
+      // ── Test mode: ping GET /v1/models on the named instance ─────────────
       process.stdout.write(chalk.gray(`Testing ${cfg.name} (${cfg.kind}) at ${cfg.baseURL} … `));
       const llm = new LLMClient();
       try {

@@ -41,6 +41,7 @@ describe("helpForView — core section", () => {
       expect(text).toContain("/projects");
       expect(text).toContain("/clear");
       expect(text).toContain("/quit");
+      expect(text).toContain("/model [<agent>] <spec>");
     }
   });
 
@@ -59,12 +60,14 @@ describe("helpForView — per-view sections", () => {
     expect(text).toContain("Display-only");
   });
 
-  it("home:orchestrator describes the global chat (M8)", () => {
+  it("home:orchestrator describes the global chat (M8) + /model", () => {
     const text = helpForView("home:orchestrator");
     expect(text).toContain("Orchestrator");
     expect(text).toContain("global");
     expect(text).toContain("propose");
     expect(text).toContain("install-orchestrator");
+    expect(text).toContain("/model <spec>");
+    expect(text).toContain("global orchestrator's model");
   });
 
   it("home:projects shows ↑/↓ + Enter to switch", () => {
@@ -80,12 +83,15 @@ describe("helpForView — per-view sections", () => {
     expect(text).toContain("approvals");
   });
 
-  it("project:agents shows Enter to open + /memory + /run", () => {
+  it("project:agents shows Enter to open + /memory + /run + context /model", () => {
     const text = helpForView("project:agents");
     expect(text).toContain("Agents");
     expect(text).toContain("live stream");
     expect(text).toContain("/memory");
     expect(text).toContain("/run");
+    expect(text).toContain("/model <spec>");
+    expect(text).toContain("selected agent's model");
+    expect(text).toContain("/model <agent> <spec>");
   });
 
   it("project:agentDetail shows /approve + /rewind + Esc", () => {
