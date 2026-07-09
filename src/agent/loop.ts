@@ -47,6 +47,10 @@ export interface RunOptions {
   maxTurns?: number;
   /** Runtime model override (e.g. from `/model` or `--model`). */
   modelOverride?: ModelOverride;
+  /** Prior conversation turns to inject after the system prompt and before the
+   * current task (used by the global orchestrator chat to retain session memory
+   * without touching project memory stores). */
+  history?: LLMMessage[];
 }
 
 function initRunState(
@@ -107,6 +111,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     sharedMemory: sharedMemory.size > 0 ? sharedMemory : undefined,
     agentMemory: agentMemory || undefined,
   });
+  // Inject prior conversation turns after the system prompt and before the
+  // current user task. This gives agents like the global orchestrator local
+  // chat-session memory while keeping injected project/agent memory disabled.
+  if (opts.history && opts.history.length > 0) {
+    messages.splice(messages.length - 1, 0, ...opts.history);
+  }
   state.messages = messages;
 
   // ── Phase 4: pre-promote tools from alwaysExpose servers ────────────────

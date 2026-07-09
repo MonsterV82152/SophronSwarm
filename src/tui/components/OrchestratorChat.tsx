@@ -41,7 +41,7 @@ export function OrchestratorChat({ messages, running, installed }: OrchestratorC
         <Text bold color="cyan">
           🧭 Global Orchestrator
         </Text>
-        <Text dimColor> — your project-lifecycle "CEO" (no memory, no codebase)</Text>
+        <Text dimColor> — your project-lifecycle "CEO" (no project memory, keeps chat history)</Text>
       </Box>
 
       {!installed ? (

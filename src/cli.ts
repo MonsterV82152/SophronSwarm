@@ -19,6 +19,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { LLMClient } from "./llm/client.js";
 import { listProviders, getProvider, addProviderInstance, removeProviderInstance, updateProviderInstance, getRawProviderEntry, configPath, resolveModelSpec, type ProviderKind } from "./llm/providers.js";
 import { AgentRegistry } from "./agent/registry.js";
+import { updateAgentModelFile } from "./agent/updateModel.js";
 import { AgentDraftStore } from "./agent/drafts.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject, removeProject, renameProject, togglePin, listProjects, findByName } from "./project/registry.js";
@@ -40,7 +41,18 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .name("sophron")
     .description("SophronSwarm V3 — modular multi-agent CLI")
-    .version("0.1.0");
+    .version("0.1.0")
+    .option("--debug", "show INFO-level log output (default shows warnings/errors only)");
+
+  // Suppress routine INFO logs unless the operator asked for them. The env var
+  // still wins if set explicitly.
+  program.hook("preAction", () => {
+    if (program.opts().debug) {
+      log.level = "info";
+    } else if (!process.env["SOPHRON_LOG_LEVEL"]) {
+      log.level = "warn";
+    }
+  });
 
   program
     .command("run")
@@ -98,6 +110,35 @@ export async function runCli(argv: string[]): Promise<void> {
       } finally {
         // Tear down services (MCP pool, DB, watcher).
         await closeServices(services);
+      }
+    });
+
+  program
+    .command("set-model")
+    .description("Persist a model override to an agent's .md file")
+    .argument("<agent>", "agent name")
+    .argument("<spec>", "model spec (tier, provider:model, or bare id)")
+    .option("-d, --dir <path>", "working directory (where agents/ lives)", process.cwd())
+    .action(async (agent: string, spec: string, opts: { dir: string }) => {
+      process.chdir(resolve(opts.dir));
+
+      const registry = new AgentRegistry();
+      const scan = registry.scan();
+      const def = registry.get(agent);
+      if (!def) {
+        console.error(chalk.red(`Agent '${agent}' not found.`));
+        console.error(chalk.gray(`Available: ${scan.agents.map((a) => a.name).join(", ") || "(none)"}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const resolved = resolveModelSpec(spec);
+        updateAgentModelFile(def.filePath, resolved);
+        console.log(chalk.green(`Updated ${agent} model file: ${resolved.model} [${resolved.provider}]`));
+      } catch (e) {
+        console.error(chalk.red(`Could not set model: ${(e as Error).message}`));
+        process.exitCode = 1;
       }
     });
 

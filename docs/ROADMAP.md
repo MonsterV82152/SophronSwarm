@@ -4,15 +4,17 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-08):** 686/686 tests passing, clean `tsc`.
+> **Baseline (verified 2026-07-08):** 703/703 tests passing, clean `tsc`.
 > Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
 > + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
 > (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer) +
 > M8 (wire global orchestrator into Home) + M10 (operator ergonomics) + M11
 > (runtime `/model` switching) + M12 (global orchestrator project context) +
-> M13 (provider descriptions) complete.
+> M13 (provider descriptions) + M14 (TUI surface-switch render cleanup) + M15
+> (single-page TUI render) + M16 (environment-sensitive `/model`) + M17
+> (global-orchestrator `/model` help) + M18 (persistent `/model` updates) complete.
 >
-> **Last updated:** 2026-07-08 (M12 complete)
+> **Last updated:** 2026-07-08 (M18 complete)
 
 ---
 
@@ -32,10 +34,12 @@ SophronSwarm (global)                          ← operator's home
 ```
 
 **Key principles (locked 2026-07-07):**
-- **Global orchestrator has NO memory.** It reads the project registry
-  (`~/.sophron/projects.json`) and the current chat thread — nothing else. It
+- **Global orchestrator has NO injected project memory.** It reads the project
+  registry (`~/.sophron/projects.json`) and the current chat thread — nothing
+  else. It retains local chat history for the session so the conversation is
+  coherent, but that history is not persisted and is not injected as memory. It
   is a pure project-lifecycle manager; it does not work inside projects or
-  inherit their memory. This prevents cross-project interference.
+  inherit project memory. This prevents cross-project interference.
 - **Each project gets a standardized orchestrator.** Project creation seeds
   an identical `orchestrator.md` into every project's `agents/`. Each copy is
   independently editable and carries its own per-project memory.
@@ -69,7 +73,7 @@ SophronSwarm (global)                          ← operator's home
 | **M4 — Context-aware `/help`** | ✅ Complete | `helpForView(view)` over M3's 11 views; core + per-view sections; 21 tests |
 | **M5 — `sophron init` Templates** | ✅ Complete | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates; seeds standardized per-project orchestrator + global architect; 25 tests |
 | **M6 — `propose_roster`** | ✅ Complete | batch draft→approve→close (transactional `writeRoster`); `sophron agents --drafts/--approve*/--reject*`; 50 tests |
-| **M7 — Global Orchestrator meta-layer** | ✅ Complete | the "CEO" agent above all projects (NO memory via `noMemory`); scoped tools (`list_projects`/`propose_project`/`init_project`); `GLOBAL_ORCHESTRATOR` template + installer; 26 tests |
+| **M7 — Global Orchestrator meta-layer** | ✅ Complete | the "CEO" agent above all projects (NO injected project memory via `noMemory`); session chat history retained; scoped tools (`list_projects`/`propose_project`/`init_project`); `GLOBAL_ORCHESTRATOR` template + installer; 26 tests |
 | **M8 — Wire Global Orchestrator into TUI Home** | ✅ Complete | real global-orchestrator chat in Home › Orchestrator; project-switch ghost-lines fix; `/clear` resets chat | 
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
 | **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
@@ -262,13 +266,15 @@ machinery (M5).
 **Built (2026-07-07):** the global orchestrator is a real, loadable agent at
 `~/.sophron/agents/global-orchestrator.md` — the operator's "CEO" for the whole
 workspace. It manages the **project lifecycle** (propose / create / list) with
-**NO memory** and **NO codebase workspace**.
+**NO injected project memory** and **NO codebase workspace**.
 - **No-memory mechanism (`noMemory: true` frontmatter, M7):** `AgentDefinition`
   + the zod loader gained a `noMemory?: boolean` field. When true, the agent
   loop (`src/agent/loop.ts`) skips BOTH shared-memory AND per-agent memory
   injection — the global orchestrator's prompt is pure system-prompt + chat
-  thread + `list_projects` output. This prevents any cross-project memory
-  interference (locked decision).
+  thread + `list_projects` output. It **does** retain local chat history for the
+  session (passed as `history` into each `runAgent` call), but that history is
+  not persisted and is not injected as memory. This prevents any cross-project
+  memory interference (locked decision).
 - **Scoped global tools (`src/tools/builtin/global.ts`, NEW):**
   - `list_projects` — read-only view of `~/.sophron/projects.json`.
   - `propose_project` — drafts a structured proposal (name, path, template,
@@ -311,9 +317,9 @@ all from one terminal session.
 
 **Scope:**
 - Replace the M3 Orchestrator-tab stub with the real global-orchestrator chat
-  (two-pane: conversation list + chat).
-- Conversation persistence: global-orchestrator threads; a thread is linked to
-  a project once it produces one; free-form chats also allowed.
+  (single-pane chat, session-only history).
+- Conversation context: prior chat turns are passed into each orchestrator run
+  so the session is coherent, but threads are not persisted across TUI sessions.
 - Project-proposal flow surfaced in the TUI (the M7 `propose_project` →
   `init_project` chain behind the chat).
 - Wire the M3 Overview aggregate-health view to live cross-project data.
@@ -551,13 +557,15 @@ its configured model on the next session unless the operator manually edited the
   file using `gray-matter`.
 - Wired the utility into `applyModelOverride()` in `src/tui/app.tsx` so every
   `/model` command persists the resolved model to the underlying `.md` file.
+- Added `sophron set-model <agent> <spec>` to the CLI so operators can persist
+  a model change without launching the TUI (`--dir` selects the project).
 - The runtime override is still updated immediately, so the very next TUI run
   uses the new model even before the file watcher rescans.
-- Added `tests/agent/updateModel.test.ts` covering model updates and provider
-  removal.
+- Added `tests/agent/updateModel.test.ts` and `tests/cli/setModel.test.ts`
+  covering model updates, provider removal, and CLI persistence.
 
-**Delivers:** `/model` changes survive restarts; agents reload with the new
-model on the next registry scan.
+**Delivers:** `/model` and `sophron set-model` changes survive restarts; agents
+reload with the new model on the next registry scan.
 
 ---
 

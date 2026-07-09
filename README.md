@@ -2,9 +2,9 @@
 
 A modular, token-optimized, multi-agent CLI for autonomous software engineering at the organization level.
 
-**Status:** Phase 0 (skeleton) — in progress.
+**Status:** Phases 0–6 complete, milestones M1–M18 done — see [`docs/ROADMAP.md`](docs/ROADMAP.md) for the latest.
 
-See [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) for the full architecture and [`docs/PHASE_0_DESIGN.md`](docs/PHASE_0_DESIGN.md) for the current build plan.
+See [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) for the full architecture.
 
 ## Quick start (once Phase 0 is complete)
 
@@ -19,8 +19,12 @@ npm run dev -- run echo-bot "say hello"
 ```bash
 # Agents
 sophron                                  # launch the TUI dashboard (default)
-sophron run <agent> "<task>" [--dir .]   # run one agent on a task
+sophron run <agent> "<task>" [--dir .] [--model <spec>]   # run one agent on a task
+sophron set-model <agent> <spec> [--dir .]               # persist a model change to the agent's .md file
 sophron agents [--drafts|--approve <n>...|--reject <n>...]   # list / manage drafts
+
+# Global flags
+sophron --debug ...                      # show INFO-level logs (default is warnings/errors only)
 
 # LLM providers (config in ~/.sophron/config.json)
 sophron add-provider                     # interactive: prompt for name/kind/url/key/model
@@ -45,16 +49,24 @@ mapped to concrete models via the `tiers` object in `config.json`.
 
 ## Stack
 
-TypeScript (strict), Node 22+, OpenAI-compatible LLM client (OpenRouter / Ollama / z.ai), better-sqlite3 checkpointer, Ink TUI (later), Next.js web UI (later).
+TypeScript (strict), Node 22+, OpenAI-compatible LLM client (OpenRouter / Ollama / z.ai), better-sqlite3 checkpointer, Ink TUI, MCP SDK. Next.js web UI deferred.
 
 ## Project layout
 
 ```
 src/
-├── agent/     # declarative agent loader + the agentic loop
-├── tools/     # tool dispatcher + built-in tools
+├── agent/     # declarative agent loader + the agentic loop + model persistence
+├── init/      # project templates + global orchestrator/architect installers
 ├── llm/       # provider config, client, prompt builder
-├── state/     # checkpointer (SQLite) + recorder (JSONL)
+├── memory/    # per-agent, shared, and checkpoint memory stores
+├── mcp/       # MCP pool, catalog, cost meter, promotion
+├── project/   # project registry
+├── runtime/   # event recorder
+├── sandbox/   # bubblewrap sandbox backend
+├── services/  # lifecycle wiring
+├── state/     # checkpointer (SQLite)
+├── tools/     # tool dispatcher + built-in tools
+├── tui/       # Ink TUI shell + components
 └── util/      # retry, tokenize, logger
 agents/        # project-level agent definitions (*.md)
 docs/          # design docs

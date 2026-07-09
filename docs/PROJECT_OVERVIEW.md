@@ -153,18 +153,17 @@ When a task needs critical info, the sub-agent writes it to **shared memory** (�
 ### 5.5 Optimized UI/CLI Navigation ✅ (refined — rewritten for the two-tier hierarchy)
 Two surfaces, one data model. **CLI-first** (locked, §7.6):
 - **CLI/TUI (primary):** a **box-chrome** terminal shell with a "SophronSwarm" ASCII header, a horizontal divider, and a **horizontal tab bar** navigated with ←/→ (Enter/↓ drills in, Esc/↑ exits). The shell has two surfaces:
-  - **Home surface** — three tabs: **Overview** (aggregate cross-project health: active runs, pending approvals, token spend, agents in HALT — display-only), **Orchestrator** (Claude-Code/Codex-style two-pane chat with the **global orchestrator** — conversation list left, chat right), and **Projects** (list all projects; enter one).
-  - **Project surface** — its own tabs: **Status** (project-specific approvals/runs/token use) and **Agents** (list; select one → **Agent detail** with a **live stream** of what it's doing).
+  - **Home surface** — three tabs: **Overview** (aggregate cross-project health: active runs, pending approvals, token spend, agents in HALT — display-only), **Orchestrator** (single-pane chat with the **global orchestrator**; chat history is retained for the session but not persisted across restarts), and **Projects** (list all projects; enter one).
+  - **Project surface** — its own tabs: **Status** (project-specific approvals/runs/token use), **Agents** (list; select one → **Agent detail** with a **live stream** of what it's doing), **Runs**, **Checkpoint**, **Memory**, and **Cost**.
+  - **Output log** — command feedback (e.g. from `/model`) is rendered inline inside the active content area so it appears together with the orchestrator chat.
 - **Web UI** (V2's debug server, promoted): org-chart view of agents + delegation, live run replay, memory browser, approvals desk, token/cost dashboard. Shares the JSONL event log with the CLI. **Deferred** (M9) — CLI-first is locked.
 
 Both let the operator **interfere/customize** at any point: edit an agent mid-run, inject a checkpoint, force-approve a command, rewind to a prior state (checkpointer).
 
-> **Note (2026-07-07):** the first TUI attempt shipped but its navigation was
-> broken/confusing and is being **fully rewritten** (ROADMAP M3). The
-> authoritative nav spec is now in `ROADMAP.md` M3; the global-orchestrator
-> chat is wired in at M8. The two-tier hierarchy (global orchestrator above
-> projects + per-project orchestrator) is specified in `ROADMAP.md` (vision)
-> and `IDEAS.md` §6.
+> **Note (2026-07-07/08):** the first TUI attempt was replaced by the
+> box-chrome tabbed shell described in `ROADMAP.md` M3–M8. The global-orchestrator
+> chat is wired into Home › Orchestrator, `/model` persists model changes to
+> agent `.md` files, and command output is rendered inline with the active view.
 
 ### 5.6 Computer Access + Bash Autopilot ✅ (refined)
 **Spec.** Agents with permission (architect, dependency-manager, builder, …) can run shell commands via `run_command`, executed under **OS-level isolation**:
@@ -239,12 +238,12 @@ is the authoritative current plan. Summary:
 | **6 — Auto mode + agent-creation** | Classifier-based auto permission; `propose_agent` draft→approve. | ✅ [COMPLETE](PHASE_6_COMPLETE.md) |
 | **M1 — Output Purifier** | Deterministic + Tier-2 cheap-model filter on tool output. | ✅ DONE |
 | **M2 — Named Providers** | Free-form provider-instance names; multi-endpoint. | ✅ DONE |
-| **M3 — TUI Shell (rewrite)** | Box-chrome tabbed Home + Project View; live-stream agent detail. | 🔨 Rewrite |
-| **M4 — Context `/help`** | `helpForView(view)` over M3's view set. | 🔜 |
-| **M5 — `sophron init` Templates** | Scaffolds a project + seeds the standardized per-project orchestrator + global architect. | 🔜 |
-| **M6 — `propose_roster`** | Batch draft→approve→close; generalizes `propose_agent`. | 🔜 |
-| **M7 — Global Orchestrator meta-layer** | The "CEO" agent above all projects (no memory); `propose_project` / `init_project`. | 🔬 |
-| **M8 — Wire Global Orchestrator into Home** | Replace the M3 Orchestrator-tab stub with the real chat. | 🔬 |
+| **M3 — TUI Shell (rewrite)** | Box-chrome tabbed Home + Project View; live-stream agent detail. | ✅ DONE |
+| **M4 — Context `/help`** | `helpForView(view)` over M3's view set. | ✅ DONE |
+| **M5 — `sophron init` Templates** | Scaffolds a project + seeds the standardized per-project orchestrator + global architect. | ✅ DONE |
+| **M6 — `propose_roster`** | Batch draft→approve→close; generalizes `propose_agent`. | ✅ DONE |
+| **M7 — Global Orchestrator meta-layer** | The "CEO" agent above all projects (no injected project memory); `propose_project` / `init_project`. | ✅ DONE |
+| **M8 — Wire Global Orchestrator into Home** | Replace the M3 Orchestrator-tab stub with the real chat. | ✅ DONE |
 | **M9 — Web UI (Phase 5b)** | Promote V2 debug UI to Next.js. | ⏸ Deferred |
 
 ---
@@ -259,7 +258,7 @@ is the authoritative current plan. Summary:
 6. **Language/stack (decided — Q4 follow-up):** **TypeScript** primary + small sandbox helper (bubblewrap primary, optional Rust Landlock helper, Docker opt-in). V2 (Python) becomes the reference spec; logic ports 1:1. See §10 for the full stack.
 7. **Sandbox backend (clarified 2026-07-07):** **bubblewrap (bwrap) primary** — Landlock securityfs is not mounted on this host, so bubblewrap namespace isolation is the actual primary (the §5.4 / decision #2 text predates that finding). Docker stays opt-in; host backend gated behind `SOPHRON_ALLOW_HOST_BACKEND=1`.
 8. **Two-tier hierarchy (decided 2026-07-07):** SophronSwarm is multi-project. There is one **global orchestrator** above all projects (the operator's "CEO", at `~/.sophron/`) plus a **per-project orchestrator** seeded into each project's `agents/` by `sophron init`. The global orchestrator proposes/creates projects; the per-project orchestrator runs each project's work. See `ROADMAP.md` (vision) + `IDEAS.md` §6.
-9. **Global orchestrator has NO memory (decided 2026-07-07):** It reads the project registry (`~/.sophron/projects.json`) and the current chat thread — nothing else. No per-agent `MEMORY.md`, no shared-memory injection. It must not inherit or interfere with any project's memory. Tool set is scoped: `delegate`, `list_projects`, `propose_project`, `init_project`, read-only file tools over `~/.sophron/`. **No** `run_command` / `apply_patch`.
+9. **Global orchestrator has NO injected project memory (decided 2026-07-07, clarified 2026-07-08):** It reads the project registry (`~/.sophron/projects.json`) and the current chat thread — nothing else. No per-agent `MEMORY.md`, no shared-memory injection. It **does** retain local chat history for the session so the conversation is coherent, but that history is not persisted and is not injected as project memory. It must not inherit or interfere with any project's memory. Tool set is scoped: `delegate`, `list_projects`, `propose_project`, `init_project`, read-only file tools over `~/.sophron/`. **No** `run_command` / `apply_patch`.
 10. **Standardized per-project orchestrator = a copy (decided 2026-07-07):** `sophron init` / project creation seeds an identical `orchestrator.md` into every project's `agents/`. Each copy is independently editable and carries its own per-project memory.
 11. **Project location (decided 2026-07-07):** New projects are created at `~/sophron_workspace/<name>` and registered in `~/.sophron/projects.json`.
 
@@ -304,7 +303,7 @@ V2 was Python. For V3's stated priorities (**strong front-end + speed**, multi-a
 
 1. ~~**Ollama classifier model name**~~ — **RESOLVED (Phase 6):** `ollama:qwen3.5:9b-fast` vets each mutating command (also reused by the M1 purifier's Tier 2).
 2. **Default permission mode for the bootstrap-approved agents** — `default` (prompt) for the cautious start, or `accept-edits` to reduce friction?
-3. **Should the global orchestrator's chat history persist across sessions?** — it has no memory tier, but the Orchestrator-tab conversation list implies persistence. (Recommend: persist chat threads, but do NOT inject them as "memory".)
+3. ~~**Should the global orchestrator's chat history persist across sessions?**~~ — **RESOLVED (2026-07-08):** Chat history is retained for the session and passed into each orchestrator run, but it is **not persisted across sessions** and is **not injected as memory**.
 4. **Health-check definitions for the Home Overview** — recommend concrete signals: failed/stuck runs, pending approvals older than N, token-budget breaches, agents in HALT.
 
 All major architectural and stack decisions are now locked (see §9, items 1–11). Phases 0–6 + milestones M1–M2 complete; see individual design/completion docs under `docs/` and [`ROADMAP.md`](./ROADMAP.md) for the current M3–M9 plan.

@@ -5,7 +5,7 @@
 > isn't lost between sessions. Each entry has a status and a proposed approach
 > that can be debated before implementation.
 >
-> **Last updated:** 2026-07-07
+> **Last updated:** 2026-07-08
 
 ---
 
@@ -100,17 +100,14 @@ LocalAI, TGI, llama.cpp server).
 
 ---
 
-## 2. Project-scoped TUI navigation — 🔨 REWRITE (M3) + 🔬 global-orchestrator extension (M7/M8)
+## 2. Project-scoped TUI navigation — ✅ DONE (M3–M8)
 
-> **Status update (2026-07-07):** the *first* M3 attempt shipped (project
-> registry + `switchServices` + overlay switcher, 473 tests) but the navigation
-> UX is **broken and confusing** and is being **fully rewritten**. The
-> registry (`src/project/registry.ts`) and services teardown/rebuild
-> (`src/services/lifecycle.ts`) are **reused**; only the UX on top is replaced.
-> The design below is the **original** proposal — the rewrite replaces it with
-> the **box-chrome tabbed shell** described in `ROADMAP.md` (M3) and folds in
-> the **two-tier global-orchestrator vision** (§6 below). See `ROADMAP.md` M3
-> + M7 + M8 for the current, authoritative scope.
+> **Status update (2026-07-08):** the *first* M3 attempt was replaced by the
+> box-chrome tabbed shell described in `ROADMAP.md` (M3). The registry
+> (`src/project/registry.ts`) and services teardown/rebuild
+> (`src/services/lifecycle.ts`) were reused. The global-orchestrator chat is
+> wired into Home › Orchestrator (M8). The design below is the **original**
+> proposal; the authoritative current spec is in `ROADMAP.md` M3 + M7 + M8.
 
 ### The question
 Operator vision: `Home (everything) → Projects (list) → Project 1 (agents,
@@ -425,9 +422,11 @@ orchestrator is what the operator talks to from the Home › Orchestrator tab to
 propose and create whole projects.
 
 ### Locked decisions (2026-07-07)
-- **Global orchestrator has NO memory.** No per-agent `MEMORY.md`, no
-  shared-memory injection. It reads the project registry (`list_projects`) and
-  the current chat thread — nothing else. It is a pure project-lifecycle
+- **Global orchestrator has NO injected project memory.** No per-agent
+  `MEMORY.md`, no shared-memory injection. It reads the project registry
+  (`list_projects`) and the current chat thread — nothing else. The chat thread
+  is retained for the session so the conversation is coherent, but it is not
+  persisted and is not injected as project memory. It is a pure project-lifecycle
   manager and must not inherit or interfere with any project's memory.
 - **Per-project orchestrator = a copy.** `sophron init` seeds an identical
   `orchestrator.md` into every project's `agents/`; each copy is independently
@@ -451,14 +450,14 @@ propose and create whole projects.
 - Loader: a way to mark an agent as **memory-less** (skip per-agent + shared
   injection).
 - New tools: `propose_project`, `init_project`, `list_projects`.
-- TUI Home: replace the M3 Orchestrator-tab stub with the real chat +
+- TUI Home: the M3 Orchestrator-tab stub was replaced with the real chat +
   project-proposal flow (M8).
 
 ### Open questions
-- Should the global orchestrator's *chat history* persist across sessions?
-  (It has no memory tier, but the conversation list in the Orchestrator tab
-  implies persistence. Recommend: yes — persist chat threads, but do NOT inject
-  them as "memory"; they're just the conversation.)
+- ~~Should the global orchestrator's *chat history* persist across sessions?~~
+  **RESOLVED (2026-07-08):** Chat history is retained for the session and
+  passed into each run, but it is **not persisted across sessions** and is
+  **not injected as memory**.
 - Health-check definitions for the Home Overview: recommend concrete signals —
   failed/stuck runs, pending approvals older than N, token-budget breaches,
   agents in HALT.

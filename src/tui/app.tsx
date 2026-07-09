@@ -59,7 +59,7 @@ import { listProjects, registerProject, type ProjectEntry } from "../project/reg
 import type { SharedServices } from "../tools/schema.js";
 import type { ApprovalsQueue } from "./approvals.js";
 import type { AgentRegistry } from "../agent/registry.js";
-import type { ModelOverride } from "../types.js";
+import type { LLMMessage, ModelOverride } from "../types.js";
 
 export interface AppProps {
   services: SharedServices;
@@ -106,6 +106,10 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   // land in the same millisecond).
   const msgIdRef = useRef(0);
   const nextMsgId = useCallback(() => ++msgIdRef.current, []);
+  // Ref mirror so the async handler can read the latest chat history without
+  // recreating the callback on every new message.
+  const orchestratorMessagesRef = useRef(orchestratorMessages);
+  orchestratorMessagesRef.current = orchestratorMessages;
   // Whether the global-orchestrator agent is installed (checked lazily).
   const orchestratorInstalled = useMemo(() => registry.get("global-orchestrator") != null, [registry]);
 
@@ -244,8 +248,9 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   // ── Global orchestrator chat (M8) ──
   // Runs the global-orchestrator agent loop with the operator's message as the
   // task. The global orchestrator lives at ~/.sophron/agents/global-orchestrator.md
-  // and has NO memory + NO codebase workspace — it only manages the project
-  // lifecycle (propose / create / list). Its working dir is ~/.sophron/.
+  // and has NO injected project memory + NO codebase workspace — it only manages
+  // the project lifecycle (propose / create / list). It DOES retain local chat
+  // history within the session. Its working dir is ~/.sophron/.
   const handleOrchestratorMessage = useCallback(
     async (text: string) => {
       const agent = registry.get("global-orchestrator");
@@ -265,6 +270,12 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       setOrchestratorMessages((prev) => [...prev, { id: nextMsgId(), role: "user", text }]);
       setOrchestratorRunning(true);
       try {
+        // Feed the prior chat turns as history so the orchestrator remembers the
+        // current conversation without touching project memory stores.
+        const history: LLMMessage[] = orchestratorMessagesRef.current.map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.text,
+        }));
         const result = await runAgent({
           agent,
           task: text,
@@ -274,6 +285,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           checkpointer: services.checkpointer,
           services,
           modelOverride: modelOverrides[agent.name],
+          history,
         });
         const reply = result.state.messages
           .filter((m) => m.role === "assistant" && m.content)
@@ -569,10 +581,12 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         <TabBar labels={tabLabels} selectedIndex={tabIndex} focused={tabsFocused} />
       </Box>
 
-      {/* ── Content area ── */}
+      {/* ── Content area + output log ── */}
       {/* No remount key: React reconciles the content pane in place. Surface /
           project switches clear the terminal synchronously before the new
-          frame is painted, and the root Box is fixed to the terminal height. */}
+          frame is painted, and the root Box is fixed to the terminal height.
+          The output log is rendered here so it appears inline with the active
+          view (e.g. combined with the orchestrator chat). */}
       <Box flexDirection="column" flexGrow={1}>
         {isHome ? (
           <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
@@ -586,19 +600,19 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
             effectiveModelFor={effectiveModelFor}
           />
         )}
-      </Box>
 
-      {/* ── Output log (command feedback) ── */}
-      {blocks.length > 0 ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>── output ──</Text>
-          {blocks.slice(-4).map((b) => (
-            <Text key={b.id} color={b.color as "red" | "green" | "yellow" | "cyan" | "gray" | undefined}>
-              {b.text.length > cols - 8 ? `${b.text.slice(0, cols - 11)}...` : b.text}
-            </Text>
-          ))}
-        </Box>
-      ) : null}
+        {/* ── Output log (command feedback) ── */}
+        {blocks.length > 0 ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text dimColor>── output ──</Text>
+            {blocks.slice(-4).map((b) => (
+              <Text key={b.id} color={b.color as "red" | "green" | "yellow" | "cyan" | "gray" | undefined}>
+                {b.text.length > cols - 8 ? `${b.text.slice(0, cols - 11)}...` : b.text}
+              </Text>
+            ))}
+          </Box>
+        ) : null}
+      </Box>
 
       {/* ── Footer: input bar ── */}
       <Box marginTop={1}>

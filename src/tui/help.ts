@@ -64,7 +64,8 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
   "home:orchestrator": `── Orchestrator (global) ──
   Chat with the global orchestrator — your "CEO" for the whole workspace.
   It manages the project lifecycle (propose / create / list projects) with
-  NO memory and NO codebase workspace.
+  NO injected project memory and NO codebase workspace, but it remembers the
+  current chat session.
   Type below to chat (e.g. "I want to build a CLI tool for X").
   /projects  Jump to the Projects tab to enter a created project
   /model <spec>  Change the global orchestrator's model (updates the .md file)
