@@ -88,7 +88,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
       try {
         const modelOverride = opts.model ? resolveModelSpec(opts.model) : undefined;
-        const { task: expandedTask } = expandTaskWithAttachments(task, workingDir, [workingDir]);
+        const { task: expandedTask } = await expandTaskWithAttachments(task, workingDir, [workingDir]);
         const { state } = await runAgent({
           agent: def,
           task: expandedTask,

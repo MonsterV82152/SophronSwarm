@@ -235,11 +235,13 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
 
   // ── Attachment expansion (@path references) ──
   const expandTask = useCallback(
-    (text: string, isGlobal: boolean): { task: string; error?: string } => {
+    async (text: string, isGlobal: boolean): Promise<{ task: string; error?: string }> => {
       try {
         const baseDir = isGlobal ? sophronRoot() : workspaceDir;
-        const allowedRoots = isGlobal ? [sophronRoot(), workspaceRoot()] : [workspaceDir];
-        const { task } = expandTaskWithAttachments(text, baseDir, allowedRoots);
+        const allowedRoots = isGlobal
+          ? [sophronRoot(), workspaceRoot(), process.cwd()]
+          : [workspaceDir, sophronRoot(), workspaceRoot(), process.cwd()];
+        const { task } = await expandTaskWithAttachments(text, baseDir, allowedRoots);
         return { task };
       } catch (e) {
         return { task: text, error: (e as Error).message };
@@ -435,7 +437,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       }
       let expandedTask = task;
       try {
-        const { task: t } = expandTaskWithAttachments(task, projectPath, [projectPath]);
+        const { task: t } = await expandTaskWithAttachments(task, projectPath, [projectPath, process.cwd()]);
         expandedTask = t;
       } catch (e) {
         pushBlock(`Attachment error: ${(e as Error).message}`, "red");
@@ -490,7 +492,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       }
 
       // Expand @path references to embedded file attachments.
-      const { task: expandedTask, error } = expandTask(text, true);
+      const { task: expandedTask, error } = await expandTask(text, true);
       if (error) {
         pushBlock(`Attachment error: ${error}`, "red");
         return;
@@ -594,7 +596,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         return;
       }
 
-      const { task: expandedTask, error } = expandTask(text, false);
+      const { task: expandedTask, error } = await expandTask(text, false);
       if (error) {
         pushBlock(`Attachment error: ${error}`, "red");
         return;
@@ -1047,7 +1049,10 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         const line = nav.input;
         dispatch({ kind: "inputSubmit" });
         if (line.trim()) {
-          pushBlock(`> ${line}`, "gray");
+          const onChat =
+            (nav.surface === "home" && activeHomeTab(nav) === "orchestrator") ||
+            (nav.surface === "project" && activeProjectTab(nav) === "chat");
+          if (!onChat) pushBlock(`> ${line}`, "gray");
           handleCommand(line);
         }
         return;

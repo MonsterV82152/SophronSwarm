@@ -3,14 +3,14 @@
  *
  * Supports `@path/to/file.md` references in any task string. The parser resolves
  * each reference against a base directory (the current project/workspace) and
- * an allowed-root list, reads the file, and renders the contents as an
- * `<attachment>` block that is injected into the agent prompt.
+ * an allowed-root list, reads the file asynchronously, and renders the contents
+ * as an `<attachment>` block that is injected into the agent prompt.
  *
  * This works for both the TUI and the CLI, and it works for agents that do not
  * have file tools (e.g. the global orchestrator) because the file contents are
  * embedded before the agent loop starts.
  */
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, basename } from "node:path";
 import { safeResolve, safeResolveAllowed } from "../tools/builtin/paths.js";
 
@@ -54,18 +54,25 @@ export function resolveAttachmentPaths(
 }
 
 /** Read the resolved files into Attachment objects. */
-export function loadAttachments(resolved: Map<string, string>): Attachment[] {
-  const attachments: Attachment[] = [];
-  for (const [ref, abs] of resolved) {
-    try {
-      const content = readFileSync(abs, "utf8");
-      attachments.push({ path: abs, name: basename(abs), content, ref });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      attachments.push({ path: abs, name: basename(abs), content: `(error reading file: ${msg})`, ref });
-    }
-  }
-  return attachments;
+export async function loadAttachments(resolved: Map<string, string>): Promise<Attachment[]> {
+  const entries = Array.from(resolved.entries());
+  const results = await Promise.all(
+    entries.map(async ([ref, abs]) => {
+      try {
+        const content = await readFile(abs, "utf8");
+        return { path: abs, name: basename(abs), content, ref };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return {
+          path: abs,
+          name: basename(abs),
+          content: `(error reading file: ${msg})`,
+          ref,
+        };
+      }
+    }),
+  );
+  return results;
 }
 
 /** Render attachments as a single markdown/XML block for the prompt. */
@@ -84,16 +91,16 @@ export function renderAttachments(attachments: Attachment[]): string {
  * rendered attachment contents. Returns the expanded task and the loaded
  * attachments for callers that want to render them separately.
  */
-export function expandTaskWithAttachments(
+export async function expandTaskWithAttachments(
   task: string,
   baseDir: string,
   allowedRoots: string[],
-): { task: string; attachments: Attachment[] } {
+): Promise<{ task: string; attachments: Attachment[] }> {
   const refs = parseAttachmentRefs(task);
   if (refs.length === 0) return { task, attachments: [] };
 
   const resolved = resolveAttachmentPaths(refs, baseDir, allowedRoots);
-  const attachments = loadAttachments(resolved);
+  const attachments = await loadAttachments(resolved);
   const rendered = renderAttachments(attachments);
 
   // Remove the @-references from the task so the agent sees a clean prompt.
