@@ -19,7 +19,7 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
     description: "test",
     systemPrompt: "",
     model: "ollama:dummy",
-    modelTier: "inherit",
+    provider: "ollama",
     permissionMode: "default",
     source: "project",
     filePath: "/tmp/x.md",

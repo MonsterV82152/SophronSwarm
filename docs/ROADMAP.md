@@ -4,13 +4,10 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-08):** 657/657 tests passing, clean `tsc`.
-> Phases 0–6 complete. M1 (purifier) + M2 (named providers) + M3 (TUI rewrite)
-> + M4 (context-aware `/help`) + M5 (`sophron init` templates) + M6
-> (`propose_roster` batch bootstrap) + M7 (global orchestrator meta-layer)
-> complete.
+> **Baseline (verified 2026-07-12):** 657/657 tests passing, clean `tsc`.
+> Phases 0–6 complete. M1–M8 + M10 complete. M9 (web UI) deferred.
 >
-> **Last updated:** 2026-07-07
+> **Last updated:** 2026-07-12
 
 ---
 
@@ -373,6 +370,6 @@ M9 (web UI) ── optional / parallel / deferred
 ## Starting point
 
 M3–M8 are ✅ complete and **M10 (operator ergonomics)** is ✅ complete
-(645/645 tests). The core CLI vision (M3–M8 + M10) is now complete. **M9
+(657/657 tests). The core CLI vision (M3–M8 + M10) is now complete. **M9
 (web UI)** remains deferred (CLI-first is locked); it can be picked up in
 parallel by a separate effort.

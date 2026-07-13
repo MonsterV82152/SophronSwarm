@@ -26,7 +26,8 @@ export interface ClassifyResult {
 }
 
 /** The cheap local model used for vetting (decided: §11.1 open question). */
-export const CLASSIFIER_MODEL = "ollama:qwen3.5:9b-fast";
+export const CLASSIFIER_MODEL = "qwen3.5:9b-fast";
+export const CLASSIFIER_PROVIDER = "ollama";
 
 const CLASSIFIER_SYSTEM_PROMPT = `You are a command-safety classifier for an autonomous coding agent.
 You receive a tool name + its arguments and must decide whether the agent should be ALLOWED to execute it.
@@ -63,8 +64,9 @@ export class LlmAutoModeClassifier implements AutoModeClassifier {
     private llm: LLMClient,
     /** Override the model (e.g. for tests). Defaults to CLASSIFIER_MODEL. */
     model: string = CLASSIFIER_MODEL,
+    provider: import("../llm/providers.js").ProviderName = CLASSIFIER_PROVIDER,
   ) {
-    const r = resolveModel(model);
+    const r = resolveModel(model, provider);
     this.resolvedModel = r.model;
     this.resolvedProvider = r.provider;
   }

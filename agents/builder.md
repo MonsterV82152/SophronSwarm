@@ -6,7 +6,8 @@ tools:
   - read_file
   - list_dir
   - run_command
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: default
 maxTurns: 12
 ---

@@ -17,13 +17,10 @@ export type PermissionMode =
   | "full-auto"; // sandboxed, no prompts (Phase 6)
 
 /**
- * Model tier: a named abstraction resolved at runtime to a concrete provider
- * model id via the operator's config. Allows e.g. swapping the "frontier" model
- * without editing every agent definition.
- *
- * Can also be a concrete model id string directly.
+ * Model tier was removed in V3.1.0. Every agent now declares a concrete
+ * `model:` id (e.g. "deepseek/deepseek-v4-flash") + a `provider:` name.
+ * There are no tiers, no `inherit`, no indirection.
  */
-export type ModelTier = "inherit" | "frontier" | "mid" | "cheap" | (string & {});
 
 export interface AgentDefinition {
   /** Unique id, lowercase-hyphenated. Must match filename (without ext). */
@@ -36,12 +33,10 @@ export interface AgentDefinition {
   tools?: string[];
   /** Tool denylist, applied before the allowlist. */
   disallowedTools?: string[];
-  /** Resolved concrete model id (e.g. "anthropropic/claude-sonnet-4"). */
+  /** Resolved concrete model id (e.g. "deepseek/deepseek-v4-flash"). */
   model: string;
   /** Provider that serves `model` (resolved alongside it at load time). */
   provider?: import("./llm/providers.js").ProviderName;
-  /** Original tier before resolution (for display / re-resolution). */
-  modelTier: ModelTier;
   permissionMode: PermissionMode;
   /** MCP servers scoped to this agent (Phase 4). */
   mcpServers?: (string | Record<string, unknown>)[];

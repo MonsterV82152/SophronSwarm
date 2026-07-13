@@ -6,7 +6,8 @@ tools:
   - echo
 mcpServers:
   - math
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: default
 maxTurns: 8
 ---

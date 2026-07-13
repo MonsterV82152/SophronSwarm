@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   LlmAutoModeClassifier,
   parseVerdict,
@@ -9,6 +12,7 @@ import {
 } from "../../src/agent/autoGate.js";
 import { ApprovalsQueue } from "../../src/tui/approvals.js";
 import type { AgentDefinition, AgentRunState } from "../../src/types.js";
+import { _resetProviderCacheForTests } from "../../src/llm/providers.js";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -17,8 +21,8 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
     name: "builder",
     description: "test",
     systemPrompt: "",
-    model: "ollama:llama3.2:1b",
-    modelTier: "inherit",
+    model: "llama3.2:1b",
+    provider: "ollama",
     permissionMode: "default",
     source: "project",
     filePath: "/tmp/x.md",
@@ -52,6 +56,28 @@ function stubClassifier(decision: ClassifyResult["decision"]): AutoModeClassifie
 }
 
 // ── parseVerdict ─────────────────────────────────────────────────────────────
+
+// V3.1.0: the classifier resolves (model, provider) at construction. Set up
+// an isolated HOME with an ollama provider so resolution succeeds.
+let home: string;
+let prevHome: string | undefined;
+
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), "sophron-autogate-home-"));
+  prevHome = process.env["HOME"];
+  process.env["HOME"] = home;
+  mkdirSync(join(home, ".sophron"), { recursive: true });
+  writeFileSync(join(home, ".sophron", "config.json"), JSON.stringify({
+    providers: [{ name: "ollama", kind: "ollama", baseURL: "http://localhost:11434/v1" }],
+  }));
+  _resetProviderCacheForTests();
+});
+afterEach(() => {
+  if (prevHome !== undefined) process.env["HOME"] = prevHome;
+  else delete process.env["HOME"];
+  rmSync(home, { recursive: true, force: true });
+  _resetProviderCacheForTests();
+});
 
 describe("parseVerdict", () => {
   it("parses a clean allow|reason", () => {

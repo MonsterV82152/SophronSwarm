@@ -10,9 +10,9 @@
 import { readFileSync } from "node:fs";
 import matter from "gray-matter";
 import { z } from "zod";
-import { resolveModelWithProvider } from "../llm/providers.js";
+import { resolveModel } from "../llm/providers.js";
 import { log } from "../util/log.js";
-import type { AgentDefinition, ModelTier, PermissionMode } from "../types.js";
+import type { AgentDefinition, PermissionMode } from "../types.js";
 
 const PERMISSION_MODES = ["default", "accept-edits", "auto", "plan", "full-auto"] as const;
 
@@ -21,10 +21,8 @@ const FrontmatterSchema = z.object({
   description: z.string().min(1),
   tools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),
-  model: z.union([z.enum(["inherit", "frontier", "mid", "cheap"]), z.string()]).default("inherit"),
-  /** Named provider instance (M2). When set, targets a specific configured
-   * endpoint (e.g. "ollama-desktop"). When unset, resolved from the model. */
-  provider: z.string().optional(),
+  model: z.string().min(1),               // concrete model id (required, no tiers)
+  provider: z.string().min(1),             // provider instance name (required)
   permissionMode: z.enum(PERMISSION_MODES).default("default"),
   mcpServers: z.array(z.union([z.string(), z.record(z.unknown())])).optional(),
   memoryScopes: z.array(z.enum(["per-agent", "shared", "task"])).optional(),
@@ -87,13 +85,12 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
     return { ok: false, filePath, error: "System prompt (markdown body) is empty" };
   }
 
-  // Resolve model tier → concrete provider+model id (done ONCE at load time).
-  // If an explicit `provider:` instance is set, target it directly (validated);
-  // otherwise resolve from the model id / prefix / tier.
+  // Resolve model + provider (done ONCE at load time). V3.1.0: both are required
+  // frontmatter fields. No tiers, no fallback — model is a concrete id.
   let model: string;
   let provider;
   try {
-    const resolved = resolveModelWithProvider(fm.model as string, fm.provider);
+    const resolved = resolveModel(fm.model, fm.provider);
     model = resolved.model;
     provider = resolved.provider;
   } catch (e) {
@@ -108,7 +105,6 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
     disallowedTools: fm.disallowedTools,
     model,
     provider,
-    modelTier: fm.model as ModelTier,
     permissionMode: fm.permissionMode as PermissionMode,
     mcpServers: fm.mcpServers,
     memoryScopes: fm.memoryScopes,

@@ -64,7 +64,8 @@ export interface ProviderConfig {
   kind: ProviderKind;
   baseURL: string;
   apiKey: string | null;
-  defaultModel: string | null;
+  /** Human-readable description of this provider (for the operator + architect). */
+  description: string | null;
 }
 
 export interface ModelResolution {
@@ -81,15 +82,14 @@ export interface RawProviderEntry {
   kind?: string; // optional for legacy/migration; inferred if missing
   baseURL?: string;
   apiKey?: string;
-  defaultModel?: string;
-  /** Mark this as the default instance for its kind (prefix shortcuts target it). */
+  /** Human-readable description of what this provider is / what it's good for. */
+  description?: string;
+  /** Mark this as the default instance for its kind. */
   default?: boolean;
 }
 
 interface OperatorConfig {
   providers?: RawProviderEntry[] | Record<string, Omit<RawProviderEntry, "name" | "kind">>;
-  /** Tier → concrete model id overrides (e.g. { frontier: "anthropic/claude-sonnet-4" }). */
-  tiers?: Record<string, string>;
 }
 
 // ── Env-var expansion ───────────────────────────────────────────────────────
@@ -106,67 +106,43 @@ export function expandEnv(value: string): string {
 
 // ── Config loading + migration ──────────────────────────────────────────────
 
-/** Built-in zero-config defaults (one instance per known kind). */
-function builtinDefaults(): ProviderConfig[] {
-  return [
-    {
-      name: "openrouter",
-      kind: "openrouter",
-      baseURL: "https://openrouter.ai/api/v1",
-      apiKey: process.env["OPENROUTER_API_KEY"] ?? null,
-      defaultModel: process.env["OPENROUTER_DEFAULT_MODEL"] ?? null,
-    },
-    {
-      name: "zai",
-      kind: "zai",
-      baseURL: "https://api.z.ai/api/coding/paas/v4",
-      apiKey: process.env["ZAI_API_KEY"] ?? null,
-      defaultModel: process.env["ZAI_DEFAULT_MODEL"] ?? null,
-    },
-    {
-      name: "ollama",
-      kind: "ollama",
-      baseURL: process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1",
-      // ollama ignores the key but the OpenAI SDK wants one.
-      apiKey: process.env["OLLAMA_API_KEY"] ?? "ollama",
-      defaultModel: process.env["OLLAMA_DEFAULT_MODEL"] ?? null,
-    },
-  ];
-}
-
 /**
  * Apply sensible defaults for a kind when the config entry omits them.
- * - openrouter: baseURL + env apiKey.
- * - ollama: localhost baseURL, dummy apiKey, env defaultModel.
- * - zai: fixed baseURL + env apiKey.
+ * - openrouter: baseURL.
+ * - ollama: localhost baseURL, dummy apiKey.
+ * - zai: fixed baseURL.
  * - openai-compat: no defaults — baseURL + apiKey must come from the entry.
+ *
+ * NOTE: V3.1.0 removed `defaultModel` env fallbacks and built-in zero-config
+ * defaults. Every agent must declare a concrete `model:` + `provider:`.
  *
  * Accepts a partial entry (name is added by the caller) so it works for both
  * the array form and the legacy-object migration.
  */
 function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: string }): Omit<ProviderConfig, "name"> {
   const kind = (entry.kind ?? "openai-compat") as ProviderKind;
+  const description = entry.description ? expandEnv(entry.description) : null;
   switch (kind) {
     case "openrouter":
       return {
         kind,
         baseURL: entry.baseURL ? expandEnv(entry.baseURL) : "https://openrouter.ai/api/v1",
-        apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : (process.env["OPENROUTER_API_KEY"] ?? null),
-        defaultModel: entry.defaultModel ? expandEnv(entry.defaultModel) : (process.env["OPENROUTER_DEFAULT_MODEL"] ?? null),
+        apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : null,
+        description,
       };
     case "ollama":
       return {
         kind,
-        baseURL: entry.baseURL ? expandEnv(entry.baseURL) : (process.env["OLLAMA_BASE_URL"] ?? "http://localhost:11434/v1"),
-        apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : (process.env["OLLAMA_API_KEY"] ?? "ollama"),
-        defaultModel: entry.defaultModel ? expandEnv(entry.defaultModel) : (process.env["OLLAMA_DEFAULT_MODEL"] ?? null),
+        baseURL: entry.baseURL ? expandEnv(entry.baseURL) : "http://localhost:11434/v1",
+        apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : "ollama",
+        description,
       };
     case "zai":
       return {
         kind,
         baseURL: entry.baseURL ? expandEnv(entry.baseURL) : "https://api.z.ai/api/coding/paas/v4",
-        apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : (process.env["ZAI_API_KEY"] ?? null),
-        defaultModel: entry.defaultModel ? expandEnv(entry.defaultModel) : (process.env["ZAI_DEFAULT_MODEL"] ?? null),
+        apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : null,
+        description,
       };
     case "openai-compat":
     default:
@@ -174,7 +150,7 @@ function applyKindDefaults(entry: Omit<RawProviderEntry, "name"> & { name?: stri
         kind: "openai-compat",
         baseURL: expandEnv(entry.baseURL ?? ""),
         apiKey: entry.apiKey != null ? expandEnv(entry.apiKey) : null,
-        defaultModel: entry.defaultModel ? expandEnv(entry.defaultModel) : null,
+        description,
       };
   }
 }
@@ -226,15 +202,15 @@ function writeRawConfig(cfg: OperatorConfig): void {
  *   - `providers: [...]`  → array form (preferred).
  *   - `providers: {kind: {...}}` → legacy object form → migrated to instances
  *     named after each kind, with a deprecation warning.
- *   - missing/empty → built-in zero-config defaults.
+ *   - missing/empty → returns `[]` (no built-in defaults in V3.1.0).
  * Duplicate instance names: last wins (logged).
  */
 function loadInstances(): ProviderConfig[] {
   const raw = loadRawConfig();
 
-  // No providers configured → built-in defaults (zero-config).
+  // No providers configured → empty list (V3.1.0: no built-in defaults).
   if (!raw.providers) {
-    return builtinDefaults();
+    return [];
   }
 
   // Legacy object form: { ollama: {...}, openrouter: {...} }.
@@ -245,12 +221,10 @@ function loadInstances(): ProviderConfig[] {
       const defaults = applyKindDefaults({ kind, ...(fields as object) });
       entries.push({ name: kind, ...defaults });
     }
-    // Merge with built-in defaults so unlisted kinds still resolve.
-    return mergeWithDefaults(entries);
+    return entries;
   }
 
-  // Array form: normalize each entry, then merge with built-in defaults so the
-  // prefix shortcuts (ollama:, zai:, openrouter:) always resolve.
+  // Array form: normalize each entry.
   const configured: ProviderConfig[] = [];
   const seen = new Set<string>();
   for (const entry of raw.providers) {
@@ -265,22 +239,7 @@ function loadInstances(): ProviderConfig[] {
     seen.add(entry.name);
     configured.push({ name: entry.name, ...defaults });
   }
-  return mergeWithDefaults(configured);
-}
-
-/**
- * Merge configured instances with built-in defaults. A configured instance
- * whose name matches a built-in default (e.g. "ollama") overrides it. Built-in
- * defaults fill in any kind that isn't represented, so prefix shortcuts always
- * have a target.
- */
-function mergeWithDefaults(configured: ProviderConfig[]): ProviderConfig[] {
-  const byName = new Map<string, ProviderConfig>();
-  // Built-ins first (lower priority).
-  for (const d of builtinDefaults()) byName.set(d.name, d);
-  // Configured overrides.
-  for (const c of configured) byName.set(c.name, c);
-  return [...byName.values()];
+  return configured;
 }
 
 // ── Instance registry (lazy — reads env at first access) ────────────────────
@@ -293,7 +252,6 @@ function mergeWithDefaults(configured: ProviderConfig[]): ProviderConfig[] {
  */
 let _instances: ProviderConfig[] | undefined;
 let _byName: Map<string, ProviderConfig> | undefined;
-let _byKind: Map<ProviderKind, ProviderConfig[]> | undefined;
 
 function instances(): ProviderConfig[] {
   if (!_instances) buildRegistry();
@@ -303,27 +261,11 @@ function byNameMap(): Map<string, ProviderConfig> {
   if (!_byName) buildRegistry();
   return _byName!;
 }
-function byKindMap(): Map<ProviderKind, ProviderConfig[]> {
-  if (!_byKind) buildRegistry();
-  return _byKind!;
-}
 
 function buildRegistry(): void {
   const list = loadInstances();
   _instances = list;
   _byName = new Map(list.map((p) => [p.name, p]));
-  _byKind = groupByKind(list);
-}
-
-/** Group instances by kind, preserving config order. */
-function groupByKind(insts: ProviderConfig[]): Map<ProviderKind, ProviderConfig[]> {
-  const m = new Map<ProviderKind, ProviderConfig[]>();
-  for (const p of insts) {
-    const arr = m.get(p.kind) ?? [];
-    arr.push(p);
-    m.set(p.kind, arr);
-  }
-  return m;
 }
 
 /**
@@ -333,7 +275,6 @@ function groupByKind(insts: ProviderConfig[]): Map<ProviderKind, ProviderConfig[
 export function _resetProviderCacheForTests(): void {
   _instances = undefined;
   _byName = undefined;
-  _byKind = undefined;
   cachedRaw = undefined;
 }
 
@@ -356,88 +297,19 @@ export function getProvider(name: ProviderName): ProviderConfig {
 }
 
 /**
- * The default instance of a given kind. Resolution:
- *   1. An instance explicitly marked `default: true` for that kind.
- *   2. An instance whose name equals the kind (the built-in singletons).
- *   3. The first instance of that kind in config order.
- * Returns undefined if no instance of that kind exists.
- */
-export function defaultForKind(kind: ProviderKind): ProviderConfig | undefined {
-  const arr = byKindMap().get(kind);
-  if (!arr || arr.length === 0) return undefined;
-  const marked = arr.find((p) => (p as RawProviderEntry & ProviderConfig).default === true);
-  if (marked) return marked;
-  const named = arr.find((p) => p.name === kind);
-  if (named) return named;
-  return arr[0];
-}
-
-/**
- * Resolve an agent's model tier (or explicit prefixed id / named provider) to
- * a concrete (instance, model). Resolution order:
- *   1. Explicit prefix ("ollama:llama3.2:1b", "zai:glm-4.6", "openrouter:x")
- *      → default instance of that kind.
- *   2. Named tier ("frontier"/"mid"/"cheap"/"inherit") → operator tier map.
- *   3. Bare model id → OpenRouter (the cloud router handles most models).
- *   4. Fallback → first instance with a configured defaultModel + valid creds.
+ * Resolve an agent's model + provider to a validated (instance, model) pair.
  *
- * Note: when an agent sets an explicit `provider:` in frontmatter, the LOADER
- * resolves the instance directly and passes it through; this function is only
- * called to resolve the *model id* (the tier/prefix logic). See loader.ts.
+ * V3.1.0: BOTH arguments are required. There are no tiers, no `inherit`, no
+ * prefix shortcuts, and no fallback chain — `model` is always a concrete model
+ * id, and `provider` must be a configured instance name.
+ *
+ * @throws if the provider instance is not configured.
  */
-export function resolveModel(tier: string): ModelResolution {
-  // 1. Explicit prefix → default instance of that kind.
-  for (const kind of ["ollama", "zai", "openrouter"] as const) {
-    const prefix = `${kind}:`;
-    if (tier.startsWith(prefix)) {
-      const inst = defaultForKind(kind);
-      if (!inst) {
-        throw new Error(`No '${kind}' provider instance is configured (model prefix '${tier}').`);
-      }
-      return { provider: inst.name, model: tier.slice(prefix.length) };
-    }
-  }
-
-  // 2. Named tier → operator override.
-  const cfg = loadRawConfig();
-  const tierOverride = cfg.tiers?.[tier];
-  if (tierOverride) return resolveModel(tierOverride);
-
-  // "inherit" with no override → fall through to default selection.
-
-  // 3 & 4. Provider defaults in priority order (openrouter, zai, ollama, then
-  // any configured instance with a defaultModel).
-  const order: ProviderKind[] = ["openrouter", "zai", "ollama"];
-  for (const kind of order) {
-    const inst = defaultForKind(kind);
-    if (inst?.defaultModel && (inst.apiKey || inst.kind === "ollama")) {
-      return { provider: inst.name, model: inst.defaultModel };
-    }
-  }
-  // Any other instance (e.g. openai-compat) with a default model.
-  for (const inst of instances()) {
-    if (inst.defaultModel && (inst.apiKey || inst.kind === "ollama")) {
-      return { provider: inst.name, model: inst.defaultModel };
-    }
-  }
-
-  throw new Error(
-    `Could not resolve model tier '${tier}'. Configure a provider in ~/.sophron/config.json or set an env default (e.g. OLLAMA_DEFAULT_MODEL).`,
-  );
-}
-
-/**
- * Resolve a (model, optional explicit provider name) pair. When the caller
- * supplies an explicit provider name (from agent frontmatter), trust it and
- * only validate it exists. Otherwise resolve via resolveModel().
- */
-export function resolveModelWithProvider(model: string, provider?: ProviderName): ModelResolution {
-  if (provider) {
-    // Validate the named instance exists; throw a clear error if not.
-    getProvider(provider);
-    return { provider, model };
-  }
-  return resolveModel(model);
+export function resolveModel(model: string, provider: ProviderName): ModelResolution {
+  // 1. Validate the provider exists (throws a clear error if not).
+  const inst = getProvider(provider);
+  // 2. Return the model as-is (always a concrete id — no tier indirection).
+  return { provider: inst.name, model };
 }
 
 // ── Mutators (sophron add-provider / remove-provider) ───────────────────────
@@ -448,7 +320,8 @@ export interface AddProviderInput {
   kind: ProviderKind;
   baseURL?: string;
   apiKey?: string;
-  defaultModel?: string;
+  /** Human-readable description of this provider. */
+  description?: string;
   /** Mark as the default instance for its kind (prefix shortcuts target it). */
   default?: boolean;
 }
@@ -478,7 +351,7 @@ export function addProviderInstance(input: AddProviderInput, opts: { replace?: b
   const entry: RawProviderEntry = { name, kind: input.kind };
   if (input.baseURL && input.baseURL.trim()) entry.baseURL = input.baseURL.trim();
   if (input.apiKey && input.apiKey.trim()) entry.apiKey = input.apiKey.trim();
-  if (input.defaultModel && input.defaultModel.trim()) entry.defaultModel = input.defaultModel.trim();
+  if (input.description && input.description.trim()) entry.description = input.description.trim();
   if (input.default) entry.default = true;
 
   // Normalize providers to the array form.
@@ -511,9 +384,6 @@ export function addProviderInstance(input: AddProviderInput, opts: { replace?: b
 /**
  * Remove a named provider instance from `~/.sophron/config.json`.
  * Returns true if an entry was removed, false if it wasn't found.
- * Never removes the built-in singletons (they always exist via mergeWithDefaults
- * when no config entry overrides them — removing the config entry just restores
- * the env-backed default).
  */
 export function removeProviderInstance(name: string): boolean {
   const cfg = readRawConfigFresh();
@@ -541,7 +411,7 @@ export function removeProviderInstance(name: string): boolean {
 export interface ProviderPatch {
   baseURL?: string;
   apiKey?: string;
-  defaultModel?: string;
+  description?: string;
   default?: boolean;
 }
 
@@ -570,10 +440,10 @@ function applyPatchToEntry(entry: RawProviderEntry, patch: ProviderPatch): void 
     if (v) entry.apiKey = v;
     else delete entry.apiKey;
   }
-  if (patch.defaultModel !== undefined) {
-    const v = patch.defaultModel.trim();
-    if (v) entry.defaultModel = v;
-    else delete entry.defaultModel;
+  if (patch.description !== undefined) {
+    const v = patch.description.trim();
+    if (v) entry.description = v;
+    else delete entry.description;
   }
   if (patch.default !== undefined) {
     if (patch.default) entry.default = true;
@@ -587,12 +457,8 @@ function applyPatchToEntry(entry: RawProviderEntry, patch: ProviderPatch): void 
  * value. This is the "edit" counterpart to addProviderInstance — no need to
  * remove + re-add just to set an API key.
  *
- * Handles the built-in-singleton case: if the named instance exists in the
- * resolved list (e.g. the env-backed "openrouter") but has NO config.json
- * entry, a new entry is created from its current resolved state + the patch.
- *
  * @returns the resulting raw entry (post-patch, exactly what's on disk).
- * @throws if the name doesn't match any provider (config or built-in).
+ * @throws if the name doesn't match any configured provider.
  */
 export function updateProviderInstance(name: string, patch: ProviderPatch): RawProviderEntry {
   if (!name.trim()) throw new Error("Provider 'name' is required.");
@@ -611,29 +477,16 @@ export function updateProviderInstance(name: string, patch: ProviderPatch): RawP
 
   const idx = arr.findIndex((e) => e.name === name);
 
-  if (idx >= 0) {
-    // ── Existing config entry: merge the patch (partial update) ──
-    const updated: RawProviderEntry = { ...arr[idx]! };
-    applyPatchToEntry(updated, patch);
-    arr[idx] = updated;
-  } else {
-    // ── No config entry: must be a built-in singleton (or unknown) ──
-    // Resolve the current state so we can persist a concrete config entry.
-    _resetProviderCacheForTests();
-    let resolved: ProviderConfig;
-    try {
-      resolved = getProvider(name);
-    } catch {
-      throw new Error(`No provider instance named '${name}'. Use 'sophron add-provider' to create one, or 'sophron providers' to list configured instances.`);
-    }
-    // Seed a new entry from the resolved (env-expanded) state, then apply patch.
-    const entry: RawProviderEntry = { name, kind: resolved.kind };
-    if (resolved.baseURL) entry.baseURL = resolved.baseURL;
-    if (resolved.apiKey) entry.apiKey = resolved.apiKey;
-    if (resolved.defaultModel) entry.defaultModel = resolved.defaultModel;
-    applyPatchToEntry(entry, patch);
-    arr.push(entry);
+  if (idx < 0) {
+    throw new Error(
+      `No provider instance named '${name}'. Use 'sophron providers add' to create one, or 'sophron providers' to list configured instances.`,
+    );
   }
+
+  // ── Existing config entry: merge the patch (partial update) ──
+  const updated: RawProviderEntry = { ...arr[idx]! };
+  applyPatchToEntry(updated, patch);
+  arr[idx] = updated;
 
   cfg.providers = arr;
   writeRawConfig(cfg);

@@ -6,7 +6,8 @@ tools:
   - read_file
   - write_file
   - list_dir
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: default
 maxTurns: 6
 ---

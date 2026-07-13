@@ -17,7 +17,7 @@ function makeAgent(name: string): AgentDefinition {
     description: `${name} agent`,
     systemPrompt: "",
     model: "ollama:test:1b",
-    modelTier: "inherit",
+    provider: "ollama",
     permissionMode: "default",
     source: "project",
     filePath: "/tmp/x.md",

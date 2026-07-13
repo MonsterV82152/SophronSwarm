@@ -49,7 +49,8 @@ tools:
   - list_dir
   - remember
   - advance_checkpoint
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: default
 maxTurns: 32
 ---
@@ -90,7 +91,8 @@ tools:
   - propose_agent
   - propose_roster
   - list_providers
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: plan
 maxTurns: 16
 ---
@@ -164,7 +166,8 @@ tools:
   - list_dir
 delegateAllowlist:
   - architect
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: default
 maxTurns: 24
 noMemory: true
@@ -243,7 +246,8 @@ tools:
   - list_dir
   - run_command
   - remember
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: auto
 maxTurns: 32
 ---
@@ -269,7 +273,8 @@ tools:
   - write_file
   - list_dir
   - run_command
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: accept-edits
 maxTurns: 24
 ---
@@ -308,7 +313,8 @@ tools:
   - list_dir
   - run_command
   - remember
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: auto
 maxTurns: 32
 ---
@@ -337,7 +343,8 @@ tools:
   - list_dir
   - run_command
   - remember
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: auto
 maxTurns: 32
 ---
@@ -363,7 +370,8 @@ tools:
   - write_file
   - list_dir
   - run_command
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: accept-edits
 maxTurns: 24
 ---
@@ -392,7 +400,8 @@ tools:
   - list_dir
   - run_command
   - remember
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: auto
 maxTurns: 32
 ---
@@ -420,7 +429,8 @@ tools:
   - list_dir
   - run_command
   - remember
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: auto
 maxTurns: 32
 ---
@@ -444,7 +454,8 @@ tools:
   - write_file
   - list_dir
   - run_command
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: accept-edits
 maxTurns: 24
 ---

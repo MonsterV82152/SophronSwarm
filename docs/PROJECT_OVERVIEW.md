@@ -225,8 +225,9 @@ Codex and Claude Code are CLI-first; SwarmClaw is web-first. Given your goals (i
 ## 8. Phasing + milestones
 
 The original phase breakdown (0–7) is **complete through Phase 6**. Subsequent
-work is tracked as **milestones M1–M9** in [`ROADMAP.md`](./ROADMAP.md), which
-is the authoritative current plan. Summary:
+work is tracked as **milestones M1–M10** in [`ROADMAP.md`](./ROADMAP.md), which
+is the authoritative current plan. **M1–M8 + M10 are complete** (657/657 tests);
+**M9 (web UI)** is deferred (CLI-first is locked). Summary:
 
 | Phase / Milestone | Deliverable | Status |
 |---|---|---|
@@ -239,13 +240,14 @@ is the authoritative current plan. Summary:
 | **6 — Auto mode + agent-creation** | Classifier-based auto permission; `propose_agent` draft→approve. | ✅ [COMPLETE](PHASE_6_COMPLETE.md) |
 | **M1 — Output Purifier** | Deterministic + Tier-2 cheap-model filter on tool output. | ✅ DONE |
 | **M2 — Named Providers** | Free-form provider-instance names; multi-endpoint. | ✅ DONE |
-| **M3 — TUI Shell (rewrite)** | Box-chrome tabbed Home + Project View; live-stream agent detail. | 🔨 Rewrite |
-| **M4 — Context `/help`** | `helpForView(view)` over M3's view set. | 🔜 |
-| **M5 — `sophron init` Templates** | Scaffolds a project + seeds the standardized per-project orchestrator + global architect. | 🔜 |
-| **M6 — `propose_roster`** | Batch draft→approve→close; generalizes `propose_agent`. | 🔜 |
-| **M7 — Global Orchestrator meta-layer** | The "CEO" agent above all projects (no memory); `propose_project` / `init_project`. | 🔬 |
-| **M8 — Wire Global Orchestrator into Home** | Replace the M3 Orchestrator-tab stub with the real chat. | 🔬 |
+| **M3 — TUI Shell (rewrite)** | Box-chrome tabbed Home + Project View; live-stream agent detail; pure nav reducer. | ✅ DONE |
+| **M4 — Context `/help`** | `helpForView(view)` over M3's view set. | ✅ DONE |
+| **M5 — `sophron init` Templates** | Scaffolds a project + seeds the standardized per-project orchestrator + global architect. | ✅ DONE |
+| **M6 — `propose_roster`** | Batch draft→approve→close; generalizes `propose_agent`. | ✅ DONE |
+| **M7 — Global Orchestrator meta-layer** | The "CEO" agent above all projects (no memory); `propose_project` / `init_project`. | ✅ DONE |
+| **M8 — Wire Global Orchestrator into Home** | Real global-orchestrator chat in Home › Orchestrator tab. | ✅ DONE |
 | **M9 — Web UI (Phase 5b)** | Promote V2 debug UI to Next.js. | ⏸ Deferred |
+| **M10 — Operator Ergonomics** | `add-provider`/`edit-provider`/`remove-provider`; `sophron projects` mgmt; model-aware architect. | ✅ DONE |
 
 ---
 
@@ -307,4 +309,4 @@ V2 was Python. For V3's stated priorities (**strong front-end + speed**, multi-a
 3. **Should the global orchestrator's chat history persist across sessions?** — it has no memory tier, but the Orchestrator-tab conversation list implies persistence. (Recommend: persist chat threads, but do NOT inject them as "memory".)
 4. **Health-check definitions for the Home Overview** — recommend concrete signals: failed/stuck runs, pending approvals older than N, token-budget breaches, agents in HALT.
 
-All major architectural and stack decisions are now locked (see §9, items 1–11). Phases 0–6 + milestones M1–M2 complete; see individual design/completion docs under `docs/` and [`ROADMAP.md`](./ROADMAP.md) for the current M3–M9 plan.
+All major architectural and stack decisions are now locked (see §9, items 1–11). Phases 0–6 + milestones M1–M8 + M10 complete (657/657 tests); M9 (web UI) deferred. See individual design/completion docs under `docs/` and [`ROADMAP.md`](./ROADMAP.md) for the full milestone plan.

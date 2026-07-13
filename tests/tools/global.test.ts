@@ -222,31 +222,41 @@ describe("list_providers", () => {
     _resetProviderCacheForTests();
   });
 
-  it("lists configured instances + default models", async () => {
-    // Zero-config: the built-in singletons exist.
+  it("lists configured instances", async () => {
+    addProviderInstance({ name: "my-or", kind: "openrouter", apiKey: "k", description: "cloud router" });
+    _resetProviderCacheForTests();
     const out = await callAsync(list_providers);
     expect(out).toMatch(/Configured provider instances/);
-    expect(out).toContain("ollama");
-    expect(out).toContain("openrouter");
-    expect(out).toContain("zai");
+    expect(out).toContain("my-or");
+    expect(out).toContain("cloud router");
   });
 
-  it("includes model-field tier guidance for the architect", async () => {
+  it("reports when no providers are configured", async () => {
     const out = await callAsync(list_providers);
-    expect(out).toMatch(/cheap/i);
-    expect(out).toMatch(/frontier/i);
-    expect(out).toMatch(/Match the model to the TASK SIZE/i);
+    expect(out).toMatch(/No providers configured/);
   });
 
-  it("shows a configured instance's default model", async () => {
-    addProviderInstance({ name: "ollama-laptop", kind: "ollama", baseURL: "http://host:11434/v1", defaultModel: "qwen3.5:9b" });
+  it("includes model-field guidance (concrete ids, no tiers)", async () => {
+    addProviderInstance({ name: "my-or", kind: "openrouter", apiKey: "k" });
+    _resetProviderCacheForTests();
+    const out = await callAsync(list_providers);
+    expect(out).toMatch(/concrete/i);
+    expect(out).toMatch(/Match the model to the TASK SIZE/i);
+    // No tier-as-valid-option guidance.
+    expect(out).not.toMatch(/NAMED TIER|named tier to stay portable/i);
+  });
+
+  it("shows a configured instance's description", async () => {
+    addProviderInstance({ name: "ollama-laptop", kind: "ollama", baseURL: "http://host:11434/v1", description: "laptop LLMs" });
     _resetProviderCacheForTests();
     const out = await callAsync(list_providers);
     expect(out).toContain("ollama-laptop");
-    expect(out).toContain("qwen3.5:9b");
+    expect(out).toContain("laptop LLMs");
   });
 
   it("does NOT probe when no probe name is given", async () => {
+    addProviderInstance({ name: "x", kind: "ollama" });
+    _resetProviderCacheForTests();
     const out = await callAsync(list_providers);
     expect(out).not.toMatch(/Probing/);
   });

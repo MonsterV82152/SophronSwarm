@@ -11,7 +11,7 @@
 import OpenAI, { type ClientOptions } from "openai";
 import { log } from "../util/log.js";
 import { retryTransient } from "../util/retry.js";
-import { getProvider, resolveModel, type ProviderName } from "./providers.js";
+import { getProvider, type ProviderName } from "./providers.js";
 import type {
   FinishReason,
   LLMMessage,
@@ -95,21 +95,15 @@ export class LLMClient {
 
   async complete(req: CompleteRequest): Promise<LLMResponse> {
     // Provider is resolved ONCE at agent-load time and carried on the agent.
-    // If a caller passes a concrete provider, trust it (no re-resolution).
-    // Only fall back to resolveModel when no provider is given (e.g. ad-hoc calls).
-    let provider: ProviderName | undefined = req.provider;
-    let model = req.model;
+    // V3.1.0: provider is always required — the loader resolves it from the
+    // agent's required `provider:` frontmatter. Ad-hoc callers must supply it.
+    const provider: ProviderName | undefined = req.provider;
     if (!provider) {
-      try {
-        const resolved = resolveModel(req.model);
-        provider = resolved.provider;
-        model = resolved.model;
-      } catch (e) {
-        // Last resort: assume OpenRouter for a bare model id.
-        provider = "openrouter";
-        log.warn({ model: req.model, err: (e as Error).message }, "no provider; assuming openrouter");
-      }
+      throw new Error(
+        `No provider given for model '${req.model}'. The agent must declare a 'provider:' in its frontmatter, or the caller must pass 'provider' to complete().`,
+      );
     }
+    const model = req.model;
 
     log.debug({ provider, model, msgCount: req.messages.length }, "LLM complete()");
 

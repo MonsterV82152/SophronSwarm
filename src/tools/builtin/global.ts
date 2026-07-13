@@ -217,7 +217,7 @@ export const init_project: ToolSpec = {
 export const list_providers: ToolSpec = {
   name: "list_providers",
   description:
-    "List the configured LLM provider instances and their default models, so you can pick a concrete " +
+    "List the configured LLM provider instances and their descriptions, so you can pick a concrete " +
     "model that actually exists. Use this BEFORE assigning a 'model' field to a drafted agent. " +
     "Set 'probe' to a provider name to also enumerate every model id it serves (network call).",
   parameters: {
@@ -233,21 +233,27 @@ export const list_providers: ToolSpec = {
   handler: async ({ args }) => {
     const probe = typeof args["probe"] === "string" ? (args["probe"] as string).trim() : "";
     const providers = listProviders();
+    if (providers.length === 0) {
+      return [
+        "No providers configured. The operator must run `sophron providers add` to configure at least one provider before any agent can run.",
+        "You cannot draft agents until providers exist — every agent requires a concrete `model:` + `provider:` pair.",
+      ].join("\n");
+    }
     const lines: string[] = [`Configured provider instances (${providers.length}):`];
     for (const p of providers) {
       const creds = p.apiKey ? "key set" : p.kind === "ollama" ? "(no key needed)" : "NO KEY";
-      const model = p.defaultModel ?? "(no default model)";
-      lines.push(`- ${p.name} [${p.kind}]  ${p.baseURL}  ${creds}  default: ${model}`);
+      const desc = p.description ? `  ${p.description}` : "";
+      lines.push(`- ${p.name} [${p.kind}]  ${p.baseURL}  ${creds}${desc}`);
     }
     lines.push("");
     lines.push(
       "Model field guidance for drafted agents:",
-      "  - Use a NAMED TIER to stay portable: 'cheap' (small/routine), 'mid' (general),",
-      "    'frontier' (hardest reasoning), 'inherit' (use the orchestrator's model).",
-      "  - Or a CONCRETE id with a provider prefix: 'ollama:qwen3.5:9b', 'zai:glm-4.6',",
-      "    'openrouter:anthropic/claude-sonnet-4'.",
-      "  - Match the model to the TASK SIZE: cheap for routine/build/test, mid for",
-      "    general features, frontier only for hard design/security work.",
+      "  - Every agent MUST have a concrete `model:` id (e.g. 'deepseek/deepseek-v4-flash',",
+      "    'qwen3.5:9b') AND a `provider:` name matching one of the instances above.",
+      "  - No tiers, no 'inherit', no defaults — always a concrete model id.",
+      "  - Match the model to the TASK SIZE: small/cheap models for routine/build/test",
+      "    loops; strong reasoning models only for hard design/security work.",
+      "  - If unsure which ids a provider serves, use `probe` to enumerate them.",
     );
 
     if (probe) {

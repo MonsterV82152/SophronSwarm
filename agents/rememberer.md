@@ -8,7 +8,8 @@ tools:
 memoryScopes:
   - per-agent
   - shared
-model: ollama:qwen3.5:9b-thinking
+model: qwen3.5:9b-thinking
+provider: ollama
 permissionMode: default
 maxTurns: 6
 ---

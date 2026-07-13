@@ -2,8 +2,8 @@
 
 > **Purpose:** A self-contained brief that gives another AI agent full context to continue developing SophronSwarm V3. Read this top to bottom before writing any code.
 >
-> **Last updated:** 2026-07-07
-> **Current state:** Phases 0–6 complete. Milestones **M1 (output purifier)** and **M2 (named providers)** complete. **M3 (TUI) shipped a first attempt but is being fully rewritten** (UX broken/confusing). 473/473 tests passing, clean `tsc`. Next: M3 rewrite (+ M5 templates in parallel). See [`ROADMAP.md`](./ROADMAP.md) for the authoritative M1–M9 plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
+> **Last updated:** 2026-07-12
+> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete (657/657 tests passing, clean `tsc`). The core CLI vision is done: box-chrome tabbed TUI (M3 rewrite), context-aware `/help` (M4), `sophron init` templates (M5), batch roster bootstrap (M6), global orchestrator meta-layer with no memory (M7), global-orchestrator chat wired into Home (M8), and operator ergonomics — add/edit/remove providers, model-aware architect, project management (M10). **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the authoritative milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
 
 ---
 
@@ -81,13 +81,15 @@ V3/
 │   │   ├── catalog.ts       # McpToolCatalog — index + keyword search (no embeddings)
 │   │   ├── costMeter.ts     # TokenCostMeter — per-tool cost estimate (chars/3.5) + cumulative + budget warn
 │   │   └── promotion.ts     # promoteTool (catalog→ToolSpec), mcpToolId, flattenMcpResult
-│   ├── tui/                 # Phase 5a — interactive operator surface (Ink) ⚠️ M3 REWRITE PENDING
-│   │   ├── slashCommands.ts # parser: /agents /runs /checkpoint /advance /cost /memory /run /approve /rewind /projects
-│   │   ├── dashboard.ts     # buildDashboard: aggregates SharedServices → renderable model
+│   ├── tui/                 # M3 (rewrite) + M4 + M8 — interactive operator surface (Ink)
+│   │   ├── nav.ts           # PURE nav reducer — owns all navigation logic (33 unit tests); no tangled useInput
+│   │   ├── slashCommands.ts # parser: /agents /runs /checkpoint /advance /cost /memory /run /approve /rewind /projects /help /clear /quit
+│   │   ├── dashboard.ts     # buildDashboard + buildOverview (M3): aggregates SharedServices → renderable model; cross-project health
+│   │   ├── help.ts          # M4: helpForView(view) + helpViewFor() — context-aware /help over 11 views
 │   │   ├── approvals.ts     # ApprovalsQueue + gateDecisionFor (prompt-gate backend)
-│   │   ├── app.tsx          # Ink shell (FIRST M3 ATTEMPT — being rewritten: box-chrome tabs + Home/Project surfaces)
+│   │   ├── app.tsx          # M3 shell: box-chrome (Banner+TabBar+InputBar) + Home/Project surfaces; reduces keyboard→nav actions
 │   │   ├── launch.tsx       # JSX bridge (CLI .ts → App .tsx)
-│   │   └── components/      # DashboardView, SelectList, pages (Projects/Agents/Runs/...), projectSwitcher (Ctrl+P overlay)
+│   │   └── components/      # AgentDetail (live JSONL-tail stream), Banner, InputBar, OrchestratorChat (M8), OverviewTab, ProjectTabs, ProjectsTab, SelectList, TabBar
 │   ├── project/
 │   │   └── registry.ts      # ~/.sophron/projects.json store (name,path,lastOpened,pinned) — REUSED by M3 rewrite
 │   ├── services/
@@ -130,7 +132,7 @@ V3/
 │       ├── log.ts                 # pino (pretty in dev)
 │       ├── tokenize.ts            # approxTokens (chars/3.5)
 │       └── retry.ts               # isTransientError + retryTransient (backoff + jitter)
-├── tests/                   # ~30 suites, 473 tests, all passing (384 Phase 0–6 + M1/M2/first-M3)
+├── tests/                   # 34 suites, 657 tests, all passing (Phases 0–6 + M1–M8 + M10)
 │   ├── util/retry.test.ts                       (9)
 │   ├── state/checkpointer.test.ts               (7)
 │   ├── tools/dispatcher.test.ts                 (11)
@@ -167,7 +169,7 @@ V3/
 - `npm run dev -- replay <runId>` — print a run's JSONL events
 - `npm run dev -- providers` — list configured provider instances
 - `npm run dev -- providers <name>` — connectivity-test a provider (`GET /v1/models`)
-- `npm test` — vitest (473 tests; 384 after Phase 6, +34 M1, +30 M2, +25 first-M3)
+- `npm test` — vitest (657 tests; Phases 0–6 + M1–M8 + M10)
 - `npm run dev` (no args) — launch the interactive TUI dashboard
 - `npm run typecheck` — `tsc --noEmit`
 
@@ -271,6 +273,25 @@ flowchart TB
 
 ---
 
+## 5b. Milestones M1–M10 (all ✅ except M9 deferred)
+
+| Milestone | What it delivered | Key files / notes |
+|---|---|---|
+| **M1 — Output Purifier** | Deterministic Tier-1 + cheap-model Tier-2 filter on tool output, wired into `ToolDispatcher.dispatch`. Raw output kept under `.sophron/raw/` (50 MB LRU); `read_raw_output` escape hatch. | `tools/purifier.ts`; frontmatter `outputPurifier`/`outputPurifierThreshold`; `ToolResult.rawPath` |
+| **M2 — Named Providers** | Free-form provider-instance names; multi-endpoint; `${VAR}` env expansion; `provider:` frontmatter; legacy object form auto-migrated. | `llm/providers.ts`; `sophron providers [name]` |
+| **M3 — TUI Shell (rewrite)** | Pure nav reducer (`nav.ts`) owns all navigation — no tangled `useInput`. Box-chrome shell: ASCII banner + divider + tab bar. Home (Overview/Orchestrator/Projects) + Project View (Status/Agents/Runs/Checkpoint/Memory/Cost). Agent detail with live JSONL-tail stream. | `tui/nav.ts` (33 tests), `tui/app.tsx`, `tui/components/*` |
+| **M4 — Context-aware `/help`** | `helpForView(view)` over M3's 11 views; core + per-view sections. | `tui/help.ts` (21 tests) |
+| **M5 — `sophron init` Templates** | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates. Every scaffold seeds the standardized per-project `orchestrator.md` + installs the global `architect.md`. | `init/templates.ts`; `sophron init [--template] [--install-architect] [--install-orchestrator]` |
+| **M6 — `propose_roster`** | Batch draft→approve→close (transactional `writeRoster`). Runtime companion to M5 templates. | `agent/drafts.ts` (batch methods), `agent/serialize.ts`, `tools/builtin/propose_roster.ts`; CLI `sophron agents --drafts/--approve*/--reject*` |
+| **M7 — Global Orchestrator** | The "CEO" agent above all projects. **`noMemory: true`** frontmatter → loop skips shared + per-agent memory injection. Scoped tools: `list_projects`/`propose_project`/`init_project` + `delegate` to architect. No `run_command`/`apply_patch`. | `tools/builtin/global.ts`, `init/templates.ts` (`GLOBAL_ORCHESTRATOR`); `AgentDefinition.noMemory` |
+| **M8 — Wire Global Orchestrator into Home** | Real global-orchestrator chat (`OrchestratorChat`) in the Home › Orchestrator tab, backed by `runAgent`. Project-switch ghost-lines fix; `/clear` resets chat. | `tui/components/OrchestratorChat.tsx` |
+| **M9 — Web UI** | ⏸ **Deferred** — CLI-first is locked. Shares the JSONL event log; low-dependency; can be picked up in parallel. | — |
+| **M10 — Operator Ergonomics** | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix). | `llm/providers.ts` (mutators), `util/prompts.ts`, `tools/builtin/global.ts` (`list_providers`) |
+
+**See [`ROADMAP.md`](./ROADMAP.md) for full detail on each milestone.**
+
+---
+
 ## 6. Conventions to follow
 
 - **TypeScript strict**, ESM, `.js` import extensions in source (NodeNext resolution).
@@ -287,7 +308,7 @@ flowchart TB
 
 ## 7. First message to send the next agent
 
-> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/ROADMAP.md` for the authoritative M1–M9 plan and the **two-tier hierarchy vision** (global orchestrator above all projects + per-project orchestrator). Phases 0–6 are complete; milestones **M1 (output purifier)** and **M2 (named providers)** are complete (473/473 tests). The first **M3 (TUI)** attempt shipped but its navigation is broken/confusing → **full rewrite** to a box-chrome tabbed Home (Overview / Orchestrator-stub / Projects) + Project View (Status / Agents with live stream). Reuse `src/project/registry.ts` + `src/services/lifecycle.ts`; replace `src/tui/app.tsx` + `components/pages.tsx` + `components/projectSwitcher.tsx`. M5 (`sophron init` templates, which seed the standardized per-project orchestrator) can be built in parallel. Then M6 (`propose_roster`), M7 (global orchestrator meta-layer — **no memory**, scoped tools), M8 (wire global orchestrator into the Home Orchestrator tab). Run `npm test` to confirm the baseline (473/473) before changing anything."
+> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/ROADMAP.md` for the authoritative milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects + per-project orchestrator). Phases 0–6 are complete; milestones **M1–M8 + M10** are complete (657/657 tests). The core CLI vision is done: the box-chrome tabbed TUI (M3 rewrite), context-aware `/help` (M4), `sophron init` templates (M5), batch roster bootstrap via `propose_roster` (M6), the global orchestrator meta-layer with `noMemory` (M7), the global-orchestrator chat wired into the Home Orchestrator tab (M8), and operator ergonomics — `add-provider`/`edit-provider`/`remove-provider`, model-aware architect, `sophron projects` management (M10). **M9 (web UI)** is deferred (CLI-first is locked). Run `npm test` to confirm the baseline (657/657) before changing anything."
 
 ---
 

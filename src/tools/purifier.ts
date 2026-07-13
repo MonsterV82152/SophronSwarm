@@ -68,7 +68,8 @@ export interface PurifyResult {
 const NOISY_TOOLS = new Set(["run_command", "npm install", "pip install", "cargo build", "yarn", "pnpm install"]);
 
 /** The cheap local model used for Tier 2 extraction. Reuses the classifier model. */
-export const PURIFIER_MODEL = "ollama:qwen3.5:9b-fast";
+export const PURIFIER_MODEL = "qwen3.5:9b-fast";
+export const PURIFIER_PROVIDER = "ollama";
 
 const DEFAULT_KEEP_LINES = 40;
 const AGGRESSIVE_KEEP_LINES = 20;
@@ -367,7 +368,7 @@ export class Purifier {
     // Resolve the Tier 2 model eagerly (like autoGate does). If unresolvable
     // (e.g. no providers configured), Tier 2 silently stays disabled.
     try {
-      const r = resolveModel(opts?.model ?? PURIFIER_MODEL);
+      const r = resolveModel(opts?.model ?? PURIFIER_MODEL, PURIFIER_PROVIDER);
       this.resolvedModel = r.model;
       this.resolvedProvider = r.provider;
     } catch {

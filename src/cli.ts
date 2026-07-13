@@ -271,8 +271,8 @@ export async function runCli(argv: string[]): Promise<void> {
       if (!name) {
         for (const p of providers) {
           const creds = p.apiKey ? chalk.green("✓ key") : chalk.gray("no key");
-          const model = p.defaultModel ? chalk.gray(p.defaultModel) : chalk.gray("(no default model)");
-          console.log(`${chalk.bold(p.name)}  ${chalk.cyan(p.kind)}  ${chalk.gray(p.baseURL)}  ${creds}  ${model}`);
+          const desc = p.description ? chalk.gray(`  ${p.description}`) : "";
+          console.log(`${chalk.bold(p.name)}  ${chalk.cyan(p.kind)}  ${chalk.gray(p.baseURL)}  ${creds}${desc}`);
         }
         console.log(chalk.gray(`\n${providers.length} instance(s). Test one with: sophron providers <name>`));
         return;
@@ -312,7 +312,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("-k, --kind <kind>", "endpoint type: openrouter | ollama | zai | openai-compat")
     .option("--base-url <url>", "OpenAI-compatible base URL")
     .option("--api-key <key>", "API key (or a ${ENV_VAR} reference)")
-    .option("-m, --model <id>", "default model id")
+    .option("--description <text>", "human-readable description of this provider")
     .option("--default", "mark this instance as the default for its kind")
     .option("--replace", "overwrite an existing instance with the same name")
     .action(async (opts: {
@@ -320,7 +320,7 @@ export async function runCli(argv: string[]): Promise<void> {
       kind?: string;
       baseUrl?: string;
       apiKey?: string;
-      model?: string;
+      description?: string;
       default?: boolean;
       replace?: boolean;
     }) => {
@@ -379,20 +379,20 @@ export async function runCli(argv: string[]): Promise<void> {
         // In non-interactive mode, leave the key unset (load-time env defaults apply).
       }
 
-      const defaultModel = opts.model ??
-        (nonInteractive ? undefined : (await prompt("Default model id (optional, e.g. qwen3.5:9b)")) || undefined);
+      const description = opts.description ??
+        (nonInteractive ? undefined : (await prompt("Description (optional — what this provider is / what it's good for)")) || undefined);
 
       const markDefault = opts.default ?? (nonInteractive ? false : await promptConfirm("Mark as the default instance for this kind?", false));
 
-      // ── Write it ───────────────────────────────────────────────────────
+      // ── Write it ────────────────────
       try {
         const stored = addProviderInstance(
-          { name, kind, baseURL: baseURL || undefined, apiKey, defaultModel, default: markDefault },
+          { name, kind, baseURL: baseURL || undefined, apiKey, description, default: markDefault },
           { replace: opts.replace },
         );
         console.log(chalk.green(`✓ Added provider '${stored.name}' (${stored.kind}) → ${configPath()}`));
         const creds = apiKey ? chalk.green("key set") : chalk.gray("no key");
-        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${creds}  ${stored.defaultModel ?? "(no default model)"}`));
+        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${creds}${stored.description ? "  " + stored.description : ""}`));
         console.log(chalk.gray(`  Test it with: sophron providers ${stored.name}`));
       } catch (e) {
         console.error(chalk.red(`Could not add provider: ${(e as Error).message}`));
@@ -418,73 +418,70 @@ export async function runCli(argv: string[]): Promise<void> {
     .description("Edit an existing provider instance (partial update — e.g. add an API key without re-adding)")
     .option("--base-url <url>", "new base URL")
     .option("--api-key <key>", "new API key (or a ${ENV_VAR} reference; use --clear-key to remove)")
-    .option("-m, --model <id>", "new default model id (use --clear-model to remove)")
+    .option("--description <text>", "new description (use --clear-description to remove)")
     .option("--default", "mark this instance as the default for its kind")
     .option("--no-default", "remove the default-for-kind flag")
     .option("--clear-key", "remove the API key from this instance")
-    .option("--clear-model", "remove the default model from this instance")
+    .option("--clear-description", "remove the description from this instance")
     .action(async (name: string, opts: {
       baseUrl?: string;
       apiKey?: string;
-      model?: string;
+      description?: string;
       default?: boolean;
       noDefault?: boolean;
       clearKey?: boolean;
-      clearModel?: boolean;
+      clearDescription?: boolean;
     }) => {
-      // ── Resolve the current entry (raw if it exists, else resolved built-in) ──
+      // ── Resolve the current entry ──
       const raw = getRawProviderEntry(name);
-      let current;
-      try {
-        current = getProvider(name);
-      } catch {
-        console.error(chalk.red(`No provider instance named '${name}'.`));
+      if (!raw) {
+        console.error(chalk.red(`No provider instance named '${name}' in ${configPath()}.`));
         console.error(chalk.gray(`List configured instances with: sophron providers`));
         process.exitCode = 1;
         return;
       }
 
       // Show current state.
-      const keyDisplay = current.apiKey ? maskKey(current.apiKey) : chalk.gray("(none)");
-      console.log(chalk.bold(`Editing '${name}'`) + chalk.gray(`  [${current.kind}]`));
-      console.log(chalk.gray(`  base URL:      ${raw?.baseURL ?? current.baseURL}`));
-      console.log(chalk.gray(`  api key:       ${raw?.apiKey ? maskKey(raw.apiKey) + " (raw)" : keyDisplay}`));
-      console.log(chalk.gray(`  default model: ${raw?.defaultModel ?? current.defaultModel ?? chalk.gray("(none)")}`));
+      const keyDisplay = raw.apiKey ? maskKey(raw.apiKey) : chalk.gray("(none)");
+      console.log(chalk.bold(`Editing '${name}'`) + chalk.gray(`  [${raw.kind ?? "?"}]`));
+      console.log(chalk.gray(`  base URL:    ${raw.baseURL ?? "(kind default)"}`));
+      console.log(chalk.gray(`  api key:     ${keyDisplay}`));
+      console.log(chalk.gray(`  description: ${raw.description ?? chalk.gray("(none)")}`));
       console.log();
 
       // ── Detect mode: non-interactive if any field flag is given OR !TTY ──
       const hasFieldFlag = Boolean(
-        opts.baseUrl !== undefined || opts.apiKey !== undefined || opts.model !== undefined ||
-        opts.default !== undefined || opts.noDefault || opts.clearKey || opts.clearModel,
+        opts.baseUrl !== undefined || opts.apiKey !== undefined || opts.description !== undefined ||
+        opts.default !== undefined || opts.noDefault || opts.clearKey || opts.clearDescription,
       );
       const nonInteractive = hasFieldFlag || !process.stdin.isTTY;
 
       // ── Build the patch ────────────────────────────────────────────────
-      const patch: { baseURL?: string; apiKey?: string; defaultModel?: string; default?: boolean } = {};
+      const patch: { baseURL?: string; apiKey?: string; description?: string; default?: boolean } = {};
 
       if (nonInteractive) {
         if (opts.clearKey) patch.apiKey = "";
         else if (opts.apiKey !== undefined) patch.apiKey = opts.apiKey;
-        if (opts.clearModel) patch.defaultModel = "";
-        else if (opts.model !== undefined) patch.defaultModel = opts.model;
+        if (opts.clearDescription) patch.description = "";
+        else if (opts.description !== undefined) patch.description = opts.description;
         if (opts.baseUrl !== undefined) patch.baseURL = opts.baseUrl;
         if (opts.default === false || opts.noDefault) patch.default = false;
         else if (opts.default === true) patch.default = true;
       } else {
         // ── Interactive: prompt each field with current value as default ──
-        const baseURL = await prompt("Base URL", { default: raw?.baseURL ?? current.baseURL });
-        if ((raw?.baseURL ?? current.baseURL ?? "") !== baseURL) patch.baseURL = baseURL;
+        const baseURL = await prompt("Base URL", { default: raw.baseURL ?? "" });
+        if ((raw.baseURL ?? "") !== baseURL) patch.baseURL = baseURL;
 
         console.log(chalk.gray("  Tip: enter a ${ENV_VAR} reference (e.g. ${OPENROUTER_API_KEY}) to keep the secret out of the file."));
-        const curKeyHint = current.apiKey ? maskKey(current.apiKey) : "(none)";
+        const curKeyHint = raw.apiKey ? maskKey(raw.apiKey) : "(none)";
         const apiKeyAns = await promptSecret(`API key (current: ${curKeyHint}, Enter to keep)`, { default: undefined as unknown as string });
         if (apiKeyAns !== null) patch.apiKey = apiKeyAns;
 
-        const curModel = raw?.defaultModel ?? current.defaultModel ?? "";
-        const modelAns = await prompt("Default model id", { default: curModel });
-        if (curModel !== modelAns) patch.defaultModel = modelAns;
+        const curDesc = raw.description ?? "";
+        const descAns = await prompt("Description", { default: curDesc });
+        if (curDesc !== descAns) patch.description = descAns;
 
-        const curDefault = Boolean(raw?.default);
+        const curDefault = Boolean(raw.default);
         const wantDefault = await promptConfirm("Mark as the default instance for this kind?", curDefault);
         if (curDefault !== wantDefault) patch.default = wantDefault;
       }
@@ -501,7 +498,7 @@ export async function runCli(argv: string[]): Promise<void> {
         const changed = Object.keys(patch).join(", ");
         console.log(chalk.green(`✓ Updated provider '${stored.name}' (${changed}) → ${configPath()}`));
         const keyOut = stored.apiKey ? chalk.green("key set") : chalk.gray("no key");
-        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${keyOut}  ${stored.defaultModel ?? "(no default model)"}`));
+        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${keyOut}${stored.description ? "  " + stored.description : ""}`));
       } catch (e) {
         console.error(chalk.red(`Could not update provider: ${(e as Error).message}`));
         process.exitCode = 1;
