@@ -69,7 +69,9 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
 
   let parsed;
   try {
-    parsed = matter(raw);
+    // Pass an options object to disable gray-matter's content-keyed cache so
+    // repeated parses (and callers that mutate parsed.data) stay isolated.
+    parsed = matter(raw, {});
   } catch (e) {
     return { ok: false, filePath, error: `Invalid frontmatter: ${(e as Error).message}` };
   }
@@ -141,7 +143,9 @@ export function updateAgentFrontmatter(
 
   let parsed;
   try {
-    parsed = matter(raw);
+    // Pass an options object to disable gray-matter's content-keyed cache so
+    // repeated parses (and callers that mutate parsed.data) stay isolated.
+    parsed = matter(raw, {});
   } catch (e) {
     throw new Error(`Invalid frontmatter in '${filePath}': ${(e as Error).message}`);
   }

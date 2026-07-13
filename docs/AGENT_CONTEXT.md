@@ -3,7 +3,7 @@
 > **Purpose:** A self-contained brief that gives another AI agent full context to continue developing SophronSwarm V3. Read this top to bottom before writing any code.
 >
 > **Last updated:** 2026-07-13
-> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete. **V3.1.0-M1–M4** complete. **V3.1.0-M4** adds the real-time agent event bus (`AgentEventBus`), per-run `RunManager` with cascading abort, `ChannelView` live channels, and interactive `ChatInput` with `@file` attachments for orchestrator channels (689/689 tests, clean `tsc`). **V3.1.0-M5** (CLI provider consolidation + init wizard) is next. **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
+> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete. **V3.1.0-M1–M5** complete. **V3.1.0-M5** consolidates provider management under `sophron providers <subcommand>`, adds a first-run provider wizard to `sophron init`, and adds `sophron agents edit --model/--provider` (707/707 tests, clean `tsc`). **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
 
 ---
 
@@ -65,10 +65,16 @@ V3/
 │   └── orchestrator.md      # Phase 2 demo (delegates to echo-bot)
 ├── src/
 │   ├── index.ts             # CLI entry
-│   ├── cli.ts               # commander subcommands: run / agents / replay
+│   ├── cli.ts               # commander router: run / agents / replay / providers / init
+│   ├── cli/
+│   │   ├── providers.ts     # V3.1.0-M5: `sophron providers` subcommands + legacy aliases
+│   │   └── agents-edit.ts   # V3.1.0-M5: `sophron agents edit --model/--provider`
+│   ├── init/
+│   │   ├── templates.ts     # project scaffolding + global orchestrator install
+│   │   └── wizard.ts        # V3.1.0-M5: first-run interactive provider wizard
 │   ├── types.ts             # Core types (AgentDefinition [model+provider required, no modelTier], AgentRunState, LLMMessage, ToolCall/Result, Usage, DelegationContext, HandoffPacket)
 │   ├── agent/
-│   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; model+provider REQUIRED (V3.1.0-M1); resolves once at load via resolveModel(model, provider); noMemory flag (M7)
+│   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; model+provider REQUIRED (V3.1.0-M1); resolves once at load via resolveModel(model, provider); noMemory flag (M7); frontmatter patcher used by `/model` + `agents edit`
 │   │   ├── registry.ts      # indexed collection + chokidar hot-reload + 12-agent soft cap
 │   │   ├── loop.ts          # THE AGENTIC LOOP (the heart) — pulls memory from services into prompt; skips memory when agent.noMemory (M7); V3.1.0-M4: abortSignal + attachments + AgentEventBus publish
 │   │   ├── delegation.ts    # checkPolicy (depth+cycle+allowlist), buildChildCtx, buildHandoffPacket, formatHandoffPacket
@@ -102,7 +108,7 @@ V3/
 │   ├── services/
 │   │   └── lifecycle.ts     # buildServices / closeServices / switchServices (teardown→rebuild on project switch) — REUSED by M3
 │   ├── llm/
-│   │   ├── providers.ts     # V3.1.0-M1: named provider instances ({name,kind,baseURL,description}) + resolveModel(model, provider) [BOTH required, no tiers/defaults] + expandEnv + legacy migration + add/update/remove mutators
+│   │   ├── providers.ts     # V3.1.0-M1/M5: named provider instances ({name,kind,baseURL,description}) + resolveModel(model, provider) [BOTH required, no tiers/defaults] + expandEnv + legacy migration + add/update/remove mutators
 │   │   ├── client.ts        # one OpenAI-compat client per instance; retry-controlled (timeout=120, maxRetries=0); listModels; provider REQUIRED on complete()
 │   │   └── promptBuilder.ts # volatility-ordered messages for prefix-cache hits; injects per-agent + shared memory
 │   ├── tools/
@@ -139,7 +145,7 @@ V3/
 │       ├── log.ts                 # pino (pretty in dev)
 │       ├── tokenize.ts            # approxTokens (chars/3.5)
 │       └── retry.ts               # isTransientError + retryTransient (backoff + jitter)
-├── tests/                   # 38 suites, 689 tests, all passing (Phases 0–6 + M1–M8 + M10 + V3.1.0-M1–M4)
+├── tests/                   # 41 suites, 707 tests, all passing (Phases 0–6 + M1–M8 + M10 + V3.1.0-M1–M5)
 │   ├── util/retry.test.ts                       (9)
 │   ├── state/checkpointer.test.ts               (7)
 │   ├── tools/dispatcher.test.ts                 (11)
@@ -182,7 +188,12 @@ V3/
 - `npm run dev -- agents` — list loaded agents
 - `npm run dev -- replay <runId>` — print a run's JSONL events
 - `npm run dev -- providers` — list configured provider instances
-- `npm run dev -- providers <name>` — connectivity-test a provider (`GET /v1/models`)
+- `npm run dev -- providers view <name>` — show provider details + connectivity-test (`GET /v1/models`)
+- `npm run dev -- providers test <name>` — alias for `view`
+- `npm run dev -- providers add` — add a provider instance (interactive or flags)
+- `npm run dev -- providers edit <name>` — edit a provider instance
+- `npm run dev -- providers remove <name>` — remove a provider instance
+- `npm run dev -- agents edit <name> --model <m> --provider <p>` — update an agent's frontmatter
 - `npm test` — vitest (689 tests; Phases 0–6 + M1–M8 + M10 + V3.1.0-M1–M4)
 - `npm run dev` (no args) — launch the interactive TUI dashboard
 - `npm run typecheck` — `tsc --noEmit`
@@ -300,7 +311,7 @@ flowchart TB
 | **M7 — Global Orchestrator** | The "CEO" agent above all projects. **`noMemory: true`** frontmatter → loop skips shared + per-agent memory injection. Scoped tools: `list_projects`/`propose_project`/`init_project`. **V3.1.0-M2 (planned):** absorbs architect — adds `propose_roster`/`propose_agent`/`list_providers`, removes `delegate`. | `tools/builtin/global.ts`, `init/templates.ts` (`GLOBAL_ORCHESTRATOR`); `AgentDefinition.noMemory` |
 | **M8 — Wire Global Orchestrator into Home** | Real global-orchestrator chat (`OrchestratorChat`) in the Home › Orchestrator tab, backed by `runAgent`. Project-switch ghost-lines fix; `/clear` resets chat. | `tui/components/OrchestratorChat.tsx` |
 | **M9 — Web UI** | ⏸ **Deferred** — CLI-first is locked. Shares the JSONL event log; low-dependency; can be picked up in parallel. | — |
-| **M10 — Operator Ergonomics** | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix). | `llm/providers.ts` (mutators), `util/prompts.ts`, `tools/builtin/global.ts` (`list_providers`) |
+| **M10 — Operator Ergonomics** | `sophron providers add/edit/remove` (interactive + flags; legacy top-level aliases kept hidden); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix). | `llm/providers.ts` (mutators), `util/prompts.ts`, `tools/builtin/global.ts` (`list_providers`) |
 | **V3.1.0-M1 — Provider + Model Refactor** ✅ | Removed the ENTIRE tier system (`ModelTier`, `modelTier`, `tiers` config), removed built-in defaults (`builtinDefaults`/`mergeWithDefaults`), removed `defaultModel` field, made `model:` + `provider:` REQUIRED, added provider `description`. `resolveModel(model, provider)` is the single chokepoint. | `llm/providers.ts`, `types.ts`, `agent/loader.ts`, `tools/builtin/global.ts`; all agent templates + tests updated. |
 | **V3.1.0-M4 — Agent Channels** ✅ | Real-time `AgentEventBus` + `RunManager` (cascading abort). `ChannelView` live channels for every agent; `ChatInput` with `@file` attachments for orchestrators; workers are observation-only. `MessageThread` shared by `ChannelView` and `OrchestratorChat`. | `agent/events.ts`, `agent/runManager.ts`, `agent/loop.ts`, `tui/components/{ChannelView,ChatInput,MessageThread}.tsx`, `tui/app.tsx`, `tui/help.ts`; 24 new tests across `tests/agent/` + `tests/tui/`. |
 
@@ -322,13 +333,15 @@ flowchart TB
 - **Don't create markdown docs unless asked** (per project convention).
 - **V3.1.0-M4 channel conventions:** an agent channel is `interactive` iff `agent.tools?.includes("delegate")`. Orchestrator channels use `ChatInput`; worker channels are observation-only. `@file` attachments are resolved with `safeResolve`, capped at 1000 lines, and injected into the first user message as `<file path="...">...</file>` blocks.
 - **V3.1.0-M4 abort conventions:** `RunManager.start()` creates an `AbortController`; `stop()` aborts it and recursively stops child runs. The loop checks the signal between turns, and `run_command` forwards the signal to the sandbox backend.
+- **V3.1.0-M5 CLI conventions:** provider management is centralized under `sophron providers`. `sophron init` runs an interactive provider wizard when no providers are configured. `sophron agents edit <name> --model <m> --provider <p>` mutates frontmatter through `resolveModel(model, provider)`.
+- **gray-matter cache convention:** Always call `matter(input, {})` in production code (pass an empty options object). gray-matter caches parses by body content when no options are supplied; mutating `parsed.data` poisons the cache for subsequent parses with the same body content.
 - **Don't relitigate locked decisions** (§1).
 
 ---
 
 ## 7. First message to send the next agent
 
-> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/V3.1.0_PLAN.md` for the atomic V3.1.0 milestone plan (§7 is the spec for M5 — CLI provider consolidation + init wizard). Phases 0–6 are complete; milestones M1–M8 + M10 are complete; **V3.1.0-M1 through M4** are complete (689/689 tests). Key V3.1.0 changes: every agent requires `model:` (concrete id) + `provider:` (configured name); the TUI renders chat views in bare chrome and dashboards in boxed chrome; `/model [agent] <model-id>` persists model changes to the agent's frontmatter; agent channels stream live activity via `AgentEventBus` and support `/stop` + `@file` attachments for orchestrators. Run `npm test` to confirm the baseline (689/689) before changing anything."
+> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/V3.1.0_PLAN.md` for the atomic V3.1.0 milestone plan. Phases 0–6 are complete; milestones M1–M8 + M10 are complete; **V3.1.0-M1 through M5** are complete (707/707 tests). Key V3.1.0 changes: every agent requires `model:` (concrete id) + `provider:` (configured name); the TUI renders chat views in bare chrome and dashboards in boxed chrome; `/model [agent] <model-id>` and `sophron agents edit <name> --model <m>` persist model changes to the agent's frontmatter; agent channels stream live activity via `AgentEventBus` and support `/stop` + `@file` attachments for orchestrators; provider management is centralized under `sophron providers`; `sophron init` runs a first-run provider wizard. Run `npm test` to confirm the baseline (707/707) before changing anything."
 
 ---
 

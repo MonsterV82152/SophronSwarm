@@ -1,38 +1,38 @@
 /**
- * CLI subcommands: run, agents, replay.
+ * CLI subcommands: run, agents, replay, providers, projects, init.
  *
  * Usage:
  *   sophron run <agent-name> "<task>" [--dir <path>]
  *   sophron agents                          list loaded agent definitions
- *   sophron agents --drafts                 list pending agent drafts (M6)
- *   sophron agents --approve <n> [n...]     approve draft(s) (M6)
- *   sophron agents --reject <n> [n...]      reject draft(s) (M6)
- *   sophron agents --approve-all            approve ALL pending drafts (M6)
- *   sophron agents --reject-all             reject ALL pending drafts (M6)
+ *   sophron agents edit <name> --model <m>  change an agent's model/provider
  *   sophron replay <runId-or-file>          print a run's JSONL events
+ *   sophron providers                       manage provider instances
  */
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
 import chalk from "chalk";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { LLMClient } from "./llm/client.js";
-import { listProviders, getProvider, addProviderInstance, removeProviderInstance, updateProviderInstance, getRawProviderEntry, configPath, type ProviderKind } from "./llm/providers.js";
+import { listProviders } from "./llm/providers.js";
 import { AgentRegistry } from "./agent/registry.js";
 import { AgentDraftStore } from "./agent/drafts.js";
+import { updateAgentFrontmatter } from "./agent/loader.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject, removeProject, renameProject, togglePin, listProjects, findByName } from "./project/registry.js";
 import { scaffoldProject, installGlobalOrchestrator, listTemplates } from "./init/templates.js";
+import { runProviderWizard } from "./init/wizard.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
-import { prompt, promptSelect, promptConfirm, promptSecret } from "./util/prompts.js";
-
-/** Mask an API key for display: show only the last 4 chars (or ${ENV} refs verbatim). */
-function maskKey(key: string): string {
-  if (key.startsWith("${")) return key; // env-var reference — show verbatim
-  if (key.length <= 4) return "****";
-  return `****${key.slice(-4)}`;
-}
+import { prompt, promptConfirm } from "./util/prompts.js";
+import {
+  buildProvidersCommand,
+  handleProvidersAdd,
+  handleProvidersEdit,
+  handleProvidersRemove,
+  type AddProviderOpts,
+  type EditProviderOpts,
+} from "./cli/providers.js";
+import { buildAgentsEditCommand } from "./cli/agents-edit.js";
 
 export async function runCli(argv: string[]): Promise<void> {
   const program = new Command();
@@ -40,7 +40,8 @@ export async function runCli(argv: string[]): Promise<void> {
   program
     .name("sophron")
     .description("SophronSwarm V3 — modular multi-agent CLI")
-    .version("0.1.0");
+    .version("0.1.0")
+    .exitOverride();
 
   program
     .command("run")
@@ -118,7 +119,7 @@ export async function runCli(argv: string[]): Promise<void> {
       }
     });
 
-  program
+  const agentsCmd = program
     .command("agents")
     .description("List loaded agent definitions; manage pending agent drafts (M6)")
     .option("-d, --dir <path>", "working directory", process.cwd())
@@ -224,6 +225,8 @@ export async function runCli(argv: string[]): Promise<void> {
       }
     });
 
+  buildAgentsEditCommand(agentsCmd);
+
   program
     .command("replay")
     .description("Print a run's recorded events")
@@ -256,58 +259,13 @@ export async function runCli(argv: string[]): Promise<void> {
       }
     });
 
+  // ── Provider commands (consolidated under `sophron providers`) ────────
+  buildProvidersCommand(program);
+
+  // Backward-compatible hidden aliases for the old top-level commands.
   program
-    .command("providers")
-    .description("List configured provider instances, or test connectivity for one")
-    .argument("[name]", "provider instance name to test (omit to list all)")
-    .action(async (name?: string) => {
-      const providers = listProviders();
-      if (providers.length === 0) {
-        console.log(chalk.gray("No providers configured. Add entries to ~/.sophron/config.json or set env defaults."));
-        return;
-      }
-
-      // ── List mode ─────────────────────────────────────────────────────────
-      if (!name) {
-        for (const p of providers) {
-          const creds = p.apiKey ? chalk.green("✓ key") : chalk.gray("no key");
-          const desc = p.description ? chalk.gray(`  ${p.description}`) : "";
-          console.log(`${chalk.bold(p.name)}  ${chalk.cyan(p.kind)}  ${chalk.gray(p.baseURL)}  ${creds}${desc}`);
-        }
-        console.log(chalk.gray(`\n${providers.length} instance(s). Test one with: sophron providers <name>`));
-        return;
-      }
-
-      // ── Test mode: ping GET /v1/models on the named instance ─────────────
-      let cfg;
-      try {
-        cfg = getProvider(name);
-      } catch (e) {
-        console.error(chalk.red((e as Error).message));
-        process.exitCode = 1;
-        return;
-      }
-      process.stdout.write(chalk.gray(`Testing ${cfg.name} (${cfg.kind}) at ${cfg.baseURL} … `));
-      const llm = new LLMClient();
-      try {
-        const start = Date.now();
-        // listModels hits GET /v1/models on the OpenAI-compatible endpoint.
-        const models = await llm.listModels(cfg.name);
-        const ms = Date.now() - start;
-        console.log(chalk.green(`✓ reachable`) + chalk.gray(` (${ms}ms, ${models.length} model(s))`));
-        if (models.length > 0) {
-          const sample = models.slice(0, 5).map((m) => m.id).join(", ");
-          console.log(chalk.gray(`  sample: ${sample}${models.length > 5 ? ", …" : ""}`));
-        }
-      } catch (e) {
-        console.log(chalk.red(`✗ unreachable`) + chalk.gray(` — ${(e as Error).message}`));
-        process.exitCode = 1;
-      }
-    });
-
-  program
-    .command("add-provider")
-    .description("Interactively add a named LLM provider instance (writes ~/.sophron/config.json)")
+    .command("add-provider", { hidden: true })
+    .description("[deprecated] Use 'sophron providers add'")
     .option("-n, --name <name>", "instance name (e.g. ollama-laptop)")
     .option("-k, --kind <kind>", "endpoint type: openrouter | ollama | zai | openai-compat")
     .option("--base-url <url>", "OpenAI-compatible base URL")
@@ -315,107 +273,16 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--description <text>", "human-readable description of this provider")
     .option("--default", "mark this instance as the default for its kind")
     .option("--replace", "overwrite an existing instance with the same name")
-    .action(async (opts: {
-      name?: string;
-      kind?: string;
-      baseUrl?: string;
-      apiKey?: string;
-      description?: string;
-      default?: boolean;
-      replace?: boolean;
-    }) => {
-      const KINDS = ["openrouter", "ollama", "zai", "openai-compat"] as const;
-      const kindLabels: Record<string, string> = {
-        "openrouter": "OpenRouter (cloud router for many models)",
-        "ollama": "Ollama (local, no API key needed)",
-        "zai": "z.ai (GLM models)",
-        "openai-compat": "Generic OpenAI-compatible (vLLM, LM Studio, LocalAI, …)",
-      };
-      const kindDefaultUrl: Record<ProviderKind, string | undefined> = {
-        openrouter: "https://openrouter.ai/api/v1",
-        ollama: "http://localhost:11434/v1",
-        zai: "https://api.z.ai/api/coding/paas/v4",
-        "openai-compat": undefined,
-      };
-
-      // Non-interactive when both essentials are given via flags OR stdin isn't
-      // a TTY (piped). In that mode we use provided flags + sensible defaults
-      // and never block on a prompt.
-      const nonInteractive = Boolean(opts.name && opts.kind) || !process.stdin.isTTY;
-
-      // ── Resolve each field (flag → prompt → default) ───────────────────
-      const name = opts.name ?? (nonInteractive ? "" : await prompt("Provider instance name", { required: true }));
-      if (!name) {
-        console.error(chalk.red("--name is required (or run interactively without flags)."));
-        process.exitCode = 1;
-        return;
-      }
-
-      let kind: ProviderKind;
-      if (opts.kind) {
-        if (!KINDS.includes(opts.kind as (typeof KINDS)[number])) {
-          console.error(chalk.red(`Invalid --kind '${opts.kind}'. Choose from: ${KINDS.join(", ")}`));
-          process.exitCode = 1;
-          return;
-        }
-        kind = opts.kind as ProviderKind;
-      } else if (nonInteractive) {
-        kind = "ollama";
-      } else {
-        kind = await promptSelect("Endpoint type (kind)", KINDS, { default: "ollama", labels: kindLabels });
-      }
-
-      const baseURL = opts.baseUrl ??
-        (nonInteractive ? kindDefaultUrl[kind] : await prompt("Base URL", { default: kindDefaultUrl[kind], required: kind === "openai-compat" }));
-
-      // API key: encourage a ${ENV_VAR} reference so the secret stays out of the file.
-      let apiKey: string | undefined = opts.apiKey;
-      if (apiKey === undefined && kind !== "ollama") {
-        if (!nonInteractive) {
-          console.log(chalk.gray("  Tip: enter a ${ENV_VAR} reference (e.g. ${OPENROUTER_API_KEY}) to keep the secret out of the config file; it's expanded at load time."));
-          const k = await promptSecret("API key (or ${ENV_VAR} reference)");
-          apiKey = k ?? undefined;
-        }
-        // In non-interactive mode, leave the key unset (load-time env defaults apply).
-      }
-
-      const description = opts.description ??
-        (nonInteractive ? undefined : (await prompt("Description (optional — what this provider is / what it's good for)")) || undefined);
-
-      const markDefault = opts.default ?? (nonInteractive ? false : await promptConfirm("Mark as the default instance for this kind?", false));
-
-      // ── Write it ────────────────────
-      try {
-        const stored = addProviderInstance(
-          { name, kind, baseURL: baseURL || undefined, apiKey, description, default: markDefault },
-          { replace: opts.replace },
-        );
-        console.log(chalk.green(`✓ Added provider '${stored.name}' (${stored.kind}) → ${configPath()}`));
-        const creds = apiKey ? chalk.green("key set") : chalk.gray("no key");
-        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${creds}${stored.description ? "  " + stored.description : ""}`));
-        console.log(chalk.gray(`  Test it with: sophron providers ${stored.name}`));
-      } catch (e) {
-        console.error(chalk.red(`Could not add provider: ${(e as Error).message}`));
-        process.exitCode = 1;
-      }
-    });
+    .action(async (opts: AddProviderOpts) => handleProvidersAdd(opts));
 
   program
-    .command("remove-provider <name>")
-    .description("Remove a named provider instance from ~/.sophron/config.json")
-    .action((name: string) => {
-      const removed = removeProviderInstance(name);
-      if (removed) {
-        console.log(chalk.green(`✓ Removed provider '${name}' from ${configPath()}`));
-      } else {
-        console.error(chalk.yellow(`No provider instance named '${name}' in ${configPath()}.`));
-        process.exitCode = 1;
-      }
-    });
+    .command("remove-provider <name>", { hidden: true })
+    .description("[deprecated] Use 'sophron providers remove'")
+    .action((name: string) => handleProvidersRemove(name));
 
   program
-    .command("edit-provider <name>")
-    .description("Edit an existing provider instance (partial update — e.g. add an API key without re-adding)")
+    .command("edit-provider <name>", { hidden: true })
+    .description("[deprecated] Use 'sophron providers edit'")
     .option("--base-url <url>", "new base URL")
     .option("--api-key <key>", "new API key (or a ${ENV_VAR} reference; use --clear-key to remove)")
     .option("--description <text>", "new description (use --clear-description to remove)")
@@ -423,87 +290,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("--no-default", "remove the default-for-kind flag")
     .option("--clear-key", "remove the API key from this instance")
     .option("--clear-description", "remove the description from this instance")
-    .action(async (name: string, opts: {
-      baseUrl?: string;
-      apiKey?: string;
-      description?: string;
-      default?: boolean;
-      noDefault?: boolean;
-      clearKey?: boolean;
-      clearDescription?: boolean;
-    }) => {
-      // ── Resolve the current entry ──
-      const raw = getRawProviderEntry(name);
-      if (!raw) {
-        console.error(chalk.red(`No provider instance named '${name}' in ${configPath()}.`));
-        console.error(chalk.gray(`List configured instances with: sophron providers`));
-        process.exitCode = 1;
-        return;
-      }
-
-      // Show current state.
-      const keyDisplay = raw.apiKey ? maskKey(raw.apiKey) : chalk.gray("(none)");
-      console.log(chalk.bold(`Editing '${name}'`) + chalk.gray(`  [${raw.kind ?? "?"}]`));
-      console.log(chalk.gray(`  base URL:    ${raw.baseURL ?? "(kind default)"}`));
-      console.log(chalk.gray(`  api key:     ${keyDisplay}`));
-      console.log(chalk.gray(`  description: ${raw.description ?? chalk.gray("(none)")}`));
-      console.log();
-
-      // ── Detect mode: non-interactive if any field flag is given OR !TTY ──
-      const hasFieldFlag = Boolean(
-        opts.baseUrl !== undefined || opts.apiKey !== undefined || opts.description !== undefined ||
-        opts.default !== undefined || opts.noDefault || opts.clearKey || opts.clearDescription,
-      );
-      const nonInteractive = hasFieldFlag || !process.stdin.isTTY;
-
-      // ── Build the patch ────────────────────────────────────────────────
-      const patch: { baseURL?: string; apiKey?: string; description?: string; default?: boolean } = {};
-
-      if (nonInteractive) {
-        if (opts.clearKey) patch.apiKey = "";
-        else if (opts.apiKey !== undefined) patch.apiKey = opts.apiKey;
-        if (opts.clearDescription) patch.description = "";
-        else if (opts.description !== undefined) patch.description = opts.description;
-        if (opts.baseUrl !== undefined) patch.baseURL = opts.baseUrl;
-        if (opts.default === false || opts.noDefault) patch.default = false;
-        else if (opts.default === true) patch.default = true;
-      } else {
-        // ── Interactive: prompt each field with current value as default ──
-        const baseURL = await prompt("Base URL", { default: raw.baseURL ?? "" });
-        if ((raw.baseURL ?? "") !== baseURL) patch.baseURL = baseURL;
-
-        console.log(chalk.gray("  Tip: enter a ${ENV_VAR} reference (e.g. ${OPENROUTER_API_KEY}) to keep the secret out of the file."));
-        const curKeyHint = raw.apiKey ? maskKey(raw.apiKey) : "(none)";
-        const apiKeyAns = await promptSecret(`API key (current: ${curKeyHint}, Enter to keep)`, { default: undefined as unknown as string });
-        if (apiKeyAns !== null) patch.apiKey = apiKeyAns;
-
-        const curDesc = raw.description ?? "";
-        const descAns = await prompt("Description", { default: curDesc });
-        if (curDesc !== descAns) patch.description = descAns;
-
-        const curDefault = Boolean(raw.default);
-        const wantDefault = await promptConfirm("Mark as the default instance for this kind?", curDefault);
-        if (curDefault !== wantDefault) patch.default = wantDefault;
-      }
-
-      // ── If the patch is empty in interactive mode, bail ────────────────
-      if (Object.keys(patch).length === 0) {
-        console.log(chalk.gray("No changes."));
-        return;
-      }
-
-      // ── Apply ──────────────────────────────────────────────────────────
-      try {
-        const stored = updateProviderInstance(name, patch);
-        const changed = Object.keys(patch).join(", ");
-        console.log(chalk.green(`✓ Updated provider '${stored.name}' (${changed}) → ${configPath()}`));
-        const keyOut = stored.apiKey ? chalk.green("key set") : chalk.gray("no key");
-        console.log(chalk.gray(`  ${stored.baseURL ?? "(kind default)"}  ${keyOut}${stored.description ? "  " + stored.description : ""}`));
-      } catch (e) {
-        console.error(chalk.red(`Could not update provider: ${(e as Error).message}`));
-        process.exitCode = 1;
-      }
-    });
+    .action(async (name: string, opts: EditProviderOpts) => handleProvidersEdit(name, opts));
 
   program
     .command("projects")
@@ -620,7 +407,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("-f, --force", "overwrite an existing agents/ directory")
     .option("--list", "list available templates and exit")
     .option("--install-orchestrator", "install/update the global orchestrator template at ~/.sophron/agents/global-orchestrator.md (M7)")
-    .action((opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installOrchestrator?: boolean }) => {
+    .action(async (opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installOrchestrator?: boolean }) => {
       // ── --list: print templates + exit ──
       if (opts.list) {
         const templates = listTemplates();
@@ -650,8 +437,34 @@ export async function runCli(argv: string[]): Promise<void> {
         ? resolve(opts.path)
         : resolve(homedir(), "sophron_workspace", name);
 
+      // First-run provider wizard when no providers are configured.
+      let wizardProvider: string | undefined;
+      let wizardModel: string | undefined;
+      if (listProviders().length === 0 && process.env.SOPHRON_SKIP_PROVIDER_CHECK !== "1") {
+        try {
+          const result = await runProviderWizard();
+          wizardProvider = result.provider;
+          wizardModel = result.model;
+        } catch (e) {
+          console.error(chalk.red(`Error: ${(e as Error).message}`));
+          process.exitCode = 1;
+          return;
+        }
+      }
+
       try {
         const result = scaffoldProject(projectPath, { template: templateName, name: opts.name, force: opts.force });
+
+        // If the wizard ran, rewrite the scaffolded agents to use the chosen model/provider.
+        if (wizardProvider && wizardModel) {
+          for (const filename of result.created.agents) {
+            updateAgentFrontmatter(join(result.projectPath, "agents", filename), {
+              provider: wizardProvider,
+              model: wizardModel,
+            });
+          }
+        }
+
         console.log(chalk.green(`✓ Scaffolded project '${result.entry.name}' from template '${result.template}'`));
         console.log(chalk.gray(`  path: ${result.projectPath}`));
         console.log(chalk.gray(`  agents (${result.created.agents.length}): ${result.created.agents.join(", ")}`));
@@ -665,7 +478,19 @@ export async function runCli(argv: string[]): Promise<void> {
       }
     });
 
-  await program.parseAsync(argv);
+  try {
+    await program.parseAsync(argv);
+  } catch (e) {
+    if (e instanceof CommanderError) {
+      // Parse-time errors (unknown option, missing argument, etc.) become
+      // stderr + a non-zero exitCode so tests can observe them.
+      const message = e.message.startsWith("error:") ? e.message : `error: ${e.message}`;
+      console.error(chalk.red(message));
+      process.exitCode = e.exitCode ?? 1;
+      return;
+    }
+    throw e;
+  }
 }
 
 function printEvent(ev: Record<string, unknown>): void {
