@@ -3,7 +3,7 @@
 > **Purpose:** A self-contained brief that gives another AI agent full context to continue developing SophronSwarm V3. Read this top to bottom before writing any code.
 >
 > **Last updated:** 2026-07-13
-> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete. **V3.1.0-M1** (provider + model contract refactor — removed tiers, removed built-in defaults, `provider:`+`model:` required, added `description`) complete (647/647 tests, clean `tsc`). The core CLI vision is done; V3.1.0 features are in progress (see [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) for the atomic milestone plan). **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
+> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete. **V3.1.0-M1** (provider + model contract refactor) complete. **V3.1.0-M2** (G_O consolidation — architect removed, global orchestrator designs rosters inline) complete. **V3.1.0-M3** (TUI chrome layering + `/model` slash command — bare chat chrome, `/model` persists model/provider to agent frontmatter) complete (665/665 tests, clean `tsc`). The core CLI vision is done; V3.1.0-M4 (agent channels) is next (see [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md)). **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
 
 ---
 
@@ -43,6 +43,8 @@
 | **Global orchestrator tools** | `list_projects`, `propose_project`, `init_project`, `propose_roster`, `propose_agent`, `list_providers`, read-only fs over `~/.sophron/`. **No** `delegate` (V3.1.0-M2 — architect removed, G_O designs rosters inline), **No** `run_command`/`apply_patch` | Scoped — no codebase workspace; scaffolding is controlled |
 | **Project location (2026-07-07)** | New projects created at `~/sophron_workspace/<name>`, registered in `~/.sophron/projects.json` | |
 | **Roster shape** | `model:` is always a concrete id + `provider:` is a configured name. E.g. `model: qwen3.5:9b-thinking` + `provider: ollama` | V3.1.0-M1: no tiers, no prefixes |
+| **TUI chrome (V3.1.0-M3)** | Chat views render **bare** (no box border/tab bar); all dashboard views stay **boxed**. Bare mode used for Home › Orchestrator and per-agent Agent channel (M4). | Maximizes screen real estate for chat; preserves chrome for information-dense dashboards |
+| **`/model` command (V3.1.0-M3)** | `/model [agent] <model-id>` re-resolves via `resolveModel(model, provider)`, mutates the in-memory `AgentDefinition`, and writes the updated `model:`/`provider:` frontmatter to disk. | Runtime model swaps without restarting the TUI |
 
 ---
 
@@ -312,7 +314,7 @@ flowchart TB
 
 ## 7. First message to send the next agent
 
-> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/V3.1.0_PLAN.md` for the atomic V3.1.0 milestone plan (§4 is a self-contained spec for M2 — G_O consolidation). Phases 0–6 are complete; milestones M1–M8 + M10 are complete; **V3.1.0-M1** (provider + model contract refactor) is complete (647/647 tests). Key V3.1.0 change: every agent requires `model:` (concrete id) + `provider:` (configured name) — no tiers, no defaults. Run `npm test` to confirm the baseline (647/647) before changing anything."
+> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/V3.1.0_PLAN.md` for the atomic V3.1.0 milestone plan (§5 is the self-contained spec for M4 — Agent Channels). Phases 0–6 are complete; milestones M1–M8 + M10 are complete; **V3.1.0-M1, M2, and M3** are complete (665/665 tests). Key V3.1.0 changes: every agent requires `model:` (concrete id) + `provider:` (configured name); the TUI renders chat views in bare chrome and dashboards in boxed chrome; `/model [agent] <model-id>` persists model changes to the agent's frontmatter. Run `npm test` to confirm the baseline (665/665) before changing anything."
 
 ---
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadAgentFile } from "../../src/agent/loader.js";
+import { loadAgentFile, updateAgentFrontmatter } from "../../src/agent/loader.js";
 import { _resetProviderCacheForTests } from "../../src/llm/providers.js";
 
 // V3.1.0: agents require concrete model + provider. We set up a config with
@@ -112,7 +112,33 @@ describe("agent loader", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.agent.noMemory).toBeUndefined();
-  });});
+  });
+
+  it("updateAgentFrontmatter patches model and provider", () => {
+    const file = join(dir, "echo-bot.md");
+    writeFileSync(file, VALID_AGENT);
+    updateAgentFrontmatter(file, { model: "qwen3.5:9b", provider: "ollama" });
+    const r = loadAgentFile({ source: "project", filePath: file });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.agent.model).toBe("qwen3.5:9b");
+    expect(r.agent.provider).toBe("ollama");
+  });
+
+  it("updateAgentFrontmatter preserves the system prompt body", () => {
+    const file = join(dir, "echo-bot.md");
+    writeFileSync(file, VALID_AGENT);
+    updateAgentFrontmatter(file, { model: "qwen3.5:9b" });
+    const r = loadAgentFile({ source: "project", filePath: file });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.agent.systemPrompt).toMatch(/echo bot/);
+  });
+
+  it("updateAgentFrontmatter throws for a missing file", () => {
+    expect(() => updateAgentFrontmatter(join(dir, "nope.md"), { model: "x" })).toThrow(/Could not read/);
+  });
+});
 
 describe("agent registry", () => {
   let dir: string;

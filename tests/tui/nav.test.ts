@@ -291,6 +291,53 @@ describe("nav state machine — programmatic navigation", () => {
     expect(s.runDetail).toBe("deadbeef");
     expect(s.agentDetail).toBeNull();
   });
+
+  it("openAgentDetail tags detail as agentDetail", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject" });
+    s = navReducer(s, { kind: "openAgentDetail", name: "builder" });
+    expect(s.agentDetail).toBe("builder");
+    expect(s.detail).toBe("agentDetail");
+  });
+
+  it("openAgentChannel tags detail as agentChannel", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject" });
+    s = navReducer(s, { kind: "openAgentChannel", name: "builder" });
+    expect(s.agentDetail).toBe("builder");
+    expect(s.detail).toBe("agentChannel");
+    expect(s.focus).toBe("content");
+  });
+
+  it("exitUp clears detail when leaving agent detail/channel", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject" });
+    s = navReducer(s, { kind: "openAgentChannel", name: "builder" });
+    s = navReducer(s, { kind: "exitUp" });
+    expect(s.agentDetail).toBeNull();
+    expect(s.detail).toBeNull();
+  });
+
+  it("closeDetail clears detail", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject" });
+    s = navReducer(s, { kind: "openAgentDetail", name: "builder" });
+    s = navReducer(s, { kind: "closeDetail" });
+    expect(s.agentDetail).toBeNull();
+    expect(s.detail).toBeNull();
+  });
+
+  it("tab movement is blocked in agent channel", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject" });
+    s = navReducer(s, { kind: "openAgentChannel", name: "builder" });
+    const before = s.projectTabIndex;
+    s = navReducer(s, { kind: "tabRight" });
+    expect(s.projectTabIndex).toBe(before);
+  });
+
+  it("list movement is blocked in agent channel", () => {
+    let s = navReducer(initialNavState(), { kind: "enterProject", tabIndex: 1 });
+    s = navReducer(s, { kind: "enterTab" });
+    s = navReducer(s, { kind: "openAgentChannel", name: "builder" });
+    s = navReducer(s, { kind: "listDown" }, { agents: 4 });
+    expect(s.agentsIndex).toBe(0);
+  });
 });
 
 describe("nav state machine — tab index preservation", () => {

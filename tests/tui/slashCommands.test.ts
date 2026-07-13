@@ -142,6 +142,35 @@ describe("parseSlashCommand — unknown commands", () => {
   });
 });
 
+describe("parseSlashCommand — /model", () => {
+  it("parses agent + model", () => {
+    expect(parseSlashCommand("/model builder qwen3.5:9b")).toEqual({
+      kind: "model",
+      agent: "builder",
+      model: "qwen3.5:9b",
+    });
+  });
+
+  it("parses model-only (uses current agent context)", () => {
+    expect(parseSlashCommand("/model qwen3.5:9b")).toEqual({
+      kind: "model",
+      model: "qwen3.5:9b",
+    });
+  });
+
+  it("parses bare /model as show-current", () => {
+    expect(parseSlashCommand("/model")).toEqual({ kind: "model" });
+  });
+
+  it("accepts quoted model ids", () => {
+    expect(parseSlashCommand('/model builder "anthropic/claude-sonnet-4"')).toEqual({
+      kind: "model",
+      agent: "builder",
+      model: "anthropic/claude-sonnet-4",
+    });
+  });
+});
+
 describe("HELP_TEXT", () => {
   it("lists the core commands", () => {
     expect(HELP_TEXT).toContain("/agents");

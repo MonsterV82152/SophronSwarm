@@ -44,6 +44,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../util/log.js";
+import type { AgentDefinition } from "../types.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -310,6 +311,26 @@ export function resolveModel(model: string, provider: ProviderName): ModelResolu
   const inst = getProvider(provider);
   // 2. Return the model as-is (always a concrete id — no tier indirection).
   return { provider: inst.name, model };
+}
+
+/**
+ * Re-resolve an agent's model + provider after a runtime change.
+ *
+ * V3.1.0: both `model:` and `provider:` are required frontmatter fields.
+ * `newModel`/`newProvider` default to the agent's current values, so a no-arg
+ * call validates the existing pair. Throws if the provider instance is unknown.
+ */
+export function reresolveModel(
+  agent: AgentDefinition,
+  newModel?: string,
+  newProvider?: ProviderName,
+): ModelResolution {
+  const model = newModel ?? agent.model;
+  const provider = newProvider ?? agent.provider;
+  if (!provider) {
+    throw new Error(`Agent '${agent.name}' has no provider configured.`);
+  }
+  return resolveModel(model, provider);
 }
 
 // ── Mutators (sophron add-provider / remove-provider) ───────────────────────

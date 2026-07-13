@@ -25,6 +25,8 @@ import {
 } from "../../src/tui/components/ProjectTabs.js";
 import { AgentDetail } from "../../src/tui/components/AgentDetail.js";
 import { SelectList, clampIndex, type SelectListItem } from "../../src/tui/components/SelectList.js";
+import { chromeForView } from "../../src/tui/app.js";
+import { initialNavState, navReducer } from "../../src/tui/nav.js";
 import type { ProjectEntry } from "../../src/project/registry.js";
 import type { DashboardModel, OverviewModel } from "../../src/tui/dashboard.js";
 
@@ -97,6 +99,36 @@ describe("Banner", () => {
     expect(frame).toContain("____"); // top of the S
     expect(frame).toContain("V3");
     expect(frame.split("\n").length).toBeGreaterThanOrEqual(5); // multi-line art
+  });
+
+  it("renders a compact single-line status when compact is provided", () => {
+    const { lastFrame } = render(<Banner version="V3" compact="Global Orchestrator" />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("SophronSwarm");
+    expect(frame).toContain("V3");
+    expect(frame).toContain("Global Orchestrator");
+    expect(frame.split("\n").length).toBe(1);
+  });
+});
+
+describe("chromeForView", () => {
+  it("returns bare for the home Orchestrator tab", () => {
+    let nav = navReducer(initialNavState(), { kind: "tabRight" }); // orchestrator
+    expect(chromeForView(nav)).toBe("bare");
+  });
+
+  it("returns bare for an agent channel", () => {
+    let nav = navReducer(initialNavState(), { kind: "enterProject" });
+    nav = navReducer(nav, { kind: "openAgentChannel", name: "builder" });
+    expect(chromeForView(nav)).toBe("bare");
+  });
+
+  it("returns boxed for dashboard views", () => {
+    expect(chromeForView(initialNavState())).toBe("boxed"); // home overview
+    let nav = navReducer(initialNavState(), { kind: "enterProject" });
+    expect(chromeForView(nav)).toBe("boxed"); // project status
+    nav = navReducer(nav, { kind: "openAgentDetail", name: "builder" });
+    expect(chromeForView(nav)).toBe("boxed"); // agent detail
   });
 });
 

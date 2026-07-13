@@ -73,8 +73,8 @@ SophronSwarm (global)                          ← operator's home
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
 | **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
 | **V3.1.0-M1 — Provider + Model Refactor** | ✅ Complete | Removed tiers/defaults/`inherit`/`defaultModel`; `model:`+`provider:` required; provider `description` field; `resolveModel(model, provider)` single chokepoint. 647 tests. |
-| **V3.1.0-M2 — G_O Consolidation** | 🔜 Next | Remove architect; G_O designs rosters inline via `propose_roster`. See [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) §4. |
-| **V3.1.0-M3 — Chrome + `/model`** | 🔜 | Bare chrome for chat views; `/model` slash command (persists). |
+| **V3.1.0-M2 — G_O Consolidation** | ✅ Complete | Remove architect; G_O designs rosters inline via `propose_roster`. |
+| **V3.1.0-M3 — Chrome + `/model`** | ✅ Complete | Bare chrome for chat views; `/model` slash command persists to agent frontmatter. |
 | **V3.1.0-M4 — Agent Channels** | 🔜 | Live stream + interrupt + interactive chat per agent. |
 | **V3.1.0-M5 — CLI + Wizard + Polish** | 🔜 | Provider commands consolidated; `sophron init` provider wizard. |
 
@@ -111,8 +111,9 @@ multi-machine local-LLM setup and generic OpenAI-compat endpoints.
 
 **Built (2026-07-06):** `ProviderName` is a free-form instance name;
 `ProviderKind` carries the old type info. `~/.sophron/config.json` `providers`
-is an array of named instances (`{name, kind, baseURL, apiKey, defaultModel}`)
-with `${VAR}` env expansion. Legacy object form auto-migrated. `provider:`
+is an array of named instances (`{name, kind, baseURL, apiKey, description}`)
+with `${VAR}` env expansion; V3.1.0-M1 removed `defaultModel` — agents must
+declare a concrete `model:`. Legacy object form auto-migrated. `provider:`
 frontmatter targets a named instance directly. `sophron providers` lists;
 `sophron providers <name>` connectivity-tests (`GET /v1/models`).
 
@@ -169,6 +170,13 @@ ASCII "SophronSwarm" banner + divider + horizontal tab bar inside one box.
 
 **Delivers:** a navigable, non-confusing terminal shell for the whole system —
 Home tabs + Project View — with the Orchestrator chat slot reserved for M8.
+
+> **V3.1.0-M3 update (2026-07-13):** The shell now supports **two chrome
+> layers**. Dashboard views keep the original boxed chrome; **chat views** (Home
+> › Orchestrator, and the upcoming per-agent Agent channel in M4) render in a
+> bare shell with a single-line status header and no box border/tab bar. The
+> `/model [agent] <model-id>` slash command was also added to change an agent's
+> model at runtime and persist it to its `.md` frontmatter.
 
 ---
 

@@ -17,7 +17,14 @@ const BANNER = [
   "                 |_|                                            ",
 ];
 
-export function Banner({ version }: { version?: string }) {
+export function Banner({ version, compact }: { version?: string; compact?: string }) {
+  if (compact) {
+    return (
+      <Text color="cyan">
+        SophronSwarm{version ? ` · ${version}` : ""}{compact ? ` · ${compact}` : ""}
+      </Text>
+    );
+  }
   return (
     <Box flexDirection="column">
       {BANNER.map((line, i) => (

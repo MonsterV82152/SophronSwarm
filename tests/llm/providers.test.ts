@@ -7,6 +7,7 @@ import {
   getProvider,
   listProviders,
   resolveModel,
+  reresolveModel,
   addProviderInstance,
   removeProviderInstance,
   updateProviderInstance,
@@ -280,6 +281,30 @@ describe("resolveModel", () => {
 
   it("throws when the provider is not configured", () => {
     expect(() => resolveModel("some-model", "nonexistent")).toThrow(/Unknown provider instance/);
+  });
+
+  it("reresolveModel validates and returns the current pair when no overrides", () => {
+    const agent = { name: "tester", model: "qwen3.5:9b", provider: "ollama" } as import("../../src/types.js").AgentDefinition;
+    const r = reresolveModel(agent);
+    expect(r.provider).toBe("ollama");
+    expect(r.model).toBe("qwen3.5:9b");
+  });
+
+  it("reresolveModel applies a new model against the agent's provider", () => {
+    const agent = { name: "tester", model: "qwen3.5:9b", provider: "ollama" } as import("../../src/types.js").AgentDefinition;
+    const r = reresolveModel(agent, "llama3.1:8b");
+    expect(r.provider).toBe("ollama");
+    expect(r.model).toBe("llama3.1:8b");
+  });
+
+  it("reresolveModel throws when the provider is unknown", () => {
+    const agent = { name: "tester", model: "qwen3.5:9b", provider: "nonexistent" } as import("../../src/types.js").AgentDefinition;
+    expect(() => reresolveModel(agent, "x")).toThrow(/Unknown provider instance/);
+  });
+
+  it("reresolveModel throws when the agent has no provider", () => {
+    const agent = { name: "tester", model: "qwen3.5:9b" } as import("../../src/types.js").AgentDefinition;
+    expect(() => reresolveModel(agent, "x")).toThrow(/no provider/);
   });
 });
 

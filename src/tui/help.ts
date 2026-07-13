@@ -27,6 +27,7 @@ export type HelpView =
   | "project:status"
   | "project:agents"
   | "project:agentDetail"
+  | "project:agentChannel"
   | "project:runs"
   | "project:runDetail"
   | "project:checkpoint"
@@ -90,6 +91,11 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
   /rewind <runId>    Rewind to a prior checkpoint of this agent's run
   Esc                Back to the Agents list`,
 
+  "project:agentChannel": `── Agent channel ──
+Live chat with this agent. Type a task below to send it.
+/model <model-id>  Change the model this agent uses (persisted to its .md file)
+Esc                Back to the Agents list`,
+
   "project:runs": `── Runs ──
   ↑/↓ to select a run · Enter to expand its event log.
   /runs [n]  Refresh the list (optional limit)`,
@@ -127,18 +133,19 @@ export function helpForView(view: HelpView): string {
  * @param surface   "home" | "project"
  * @param homeTab   active home tab ("overview" | "orchestrator" | "projects")
  * @param projectTab active project tab ("status" | "agents" | "runs" | ...)
- * @param detail    "agent" | "run" | null — the drill-down detail type
+ * @param detail    "agent" | "agentChannel" | "run" | null — the drill-down detail type
  */
 export function helpViewFor(
   surface: "home" | "project",
   homeTab: string,
   projectTab: string,
-  detail: "agent" | "run" | null,
+  detail: "agent" | "agentChannel" | "run" | null,
 ): HelpView {
   if (surface === "home") {
     return `home:${homeTab}` as HelpView;
   }
   // Project surface — detail drill-down takes precedence.
+  if (detail === "agentChannel") return "project:agentChannel";
   if (detail === "agent") return "project:agentDetail";
   if (detail === "run") return "project:runDetail";
   return `project:${projectTab}` as HelpView;

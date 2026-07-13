@@ -18,6 +18,7 @@ export type SlashCommand =
   | { kind: "advance" }
   | { kind: "cost" }
   | { kind: "memory"; agent?: string }
+  | { kind: "model"; agent?: string; model?: string }
   | { kind: "run"; agent: string; task: string }
   | { kind: "approve"; id: string; decision: "yes" | "no" }
   | { kind: "rewind"; runId: string }
@@ -74,6 +75,11 @@ export function parseSlashCommand(input: string): SlashCommand {
     case "/memory":
     case "/mem":
       return { kind: "memory", agent: tokens[0] };
+    case "/model": {
+      if (tokens.length === 0) return { kind: "model" };
+      if (tokens.length === 1) return { kind: "model", model: tokens[0] };
+      return { kind: "model", agent: tokens[0], model: tokens[1] };
+    }
     case "/run": {
       if (tokens.length < 2) {
         return { kind: "unknown", raw: trimmed, reason: "/run requires <agent> \"<task>\"" };

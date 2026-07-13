@@ -19,6 +19,8 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseSlashCommand } from "./slashCommands.js";
 import { helpForView, helpViewFor } from "./help.js";
+import { reresolveModel } from "../llm/providers.js";
+import { updateAgentFrontmatter } from "../agent/loader.js";
 import { buildDashboard, buildOverview, readRunDetail, type OverviewModel, type RunDetail } from "./dashboard.js";
 import { CheckpointManager } from "../memory/checkpoints.js";
 import {
@@ -61,6 +63,15 @@ export interface AppProps {
   workspaceDir: string;
   approvals: ApprovalsQueue;
   registry: AgentRegistry;
+}
+
+/** Determine which chrome layer a given nav state should render. */
+export function chromeForView(nav: NavState): "boxed" | "bare" {
+  // Chat views are bare.
+  if (nav.surface === "home" && activeHomeTab(nav) === "orchestrator") return "bare";
+  if (nav.detail === "agentChannel" && nav.agentDetail) return "bare";
+  // Everything else (dashboards, lists, read-only details) stays boxed.
+  return "boxed";
 }
 
 interface OutputBlock {
@@ -260,7 +271,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         void handleOrchestratorMessage(raw);
         return;
       }
-      // On Agent detail, free text is a task for THAT agent.
+      // On Agent detail or channel, free text is a task for THAT agent.
       if (nav.agentDetail && !raw.startsWith("/")) {
         pushBlock(`${nav.agentDetail}> ${raw}`, "yellow");
         pushBlock(`(task queued — run via: sophron run ${nav.agentDetail} "${raw.slice(0, 60)}")`, "gray");
@@ -269,7 +280,12 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       const cmd = parseSlashCommand(raw);
       switch (cmd.kind) {
         case "help": {
-          const detail = nav.agentDetail ? "agent" : nav.runDetail ? "run" : null;
+          let detail: "agent" | "agentChannel" | "run" | null = null;
+          if (nav.agentDetail) {
+            detail = nav.detail === "agentChannel" ? "agentChannel" : "agent";
+          } else if (nav.runDetail) {
+            detail = "run";
+          }
           const view = helpViewFor(
             nav.surface,
             activeHomeTab(nav),
@@ -280,7 +296,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
         }
         case "projects":
-          setNav((p) => ({ ...p, surface: "home", homeTabIndex: HOME_TABS.indexOf("projects"), focus: "content", agentDetail: null, runDetail: null }));
+          setNav((p) => ({ ...p, surface: "home", homeTabIndex: HOME_TABS.indexOf("projects"), focus: "content", agentDetail: null, runDetail: null, detail: null }));
           break;
         case "agents":
           if (nav.surface === "project") setNav((p) => ({ ...p, projectTabIndex: PROJECT_TABS.indexOf("agents"), focus: "content" }));
@@ -332,6 +348,32 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
             pushBlock("Cleared chat thread + output log.", "gray");
           }
           break;
+        case "model": {
+          const agentName = cmd.agent ?? nav.agentDetail;
+          if (!agentName) {
+            pushBlock("Specify an agent: /model <agent> <model-id>, or open an agent detail/channel.", "yellow");
+            break;
+          }
+          const agent = registry.get(agentName);
+          if (!agent) {
+            pushBlock(`Unknown agent '${agentName}'.`, "red");
+            break;
+          }
+          if (!cmd.model) {
+            pushBlock(`${agentName}: model=${agent.model} provider=${agent.provider ?? "(none)"}`, "cyan");
+            break;
+          }
+          try {
+            const resolved = reresolveModel(agent, cmd.model);
+            agent.model = resolved.model;
+            agent.provider = resolved.provider;
+            updateAgentFrontmatter(agent.filePath, { model: resolved.model, provider: resolved.provider });
+            pushBlock(`Updated ${agentName}: model=${resolved.model} provider=${resolved.provider}`, "green");
+          } catch (e) {
+            pushBlock(`Model update failed: ${(e as Error).message}`, "red");
+          }
+          break;
+        }
         case "quit":
           exit();
           break;
@@ -457,6 +499,39 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
   const cols = stdout?.columns ?? 80;
   const activeProjectPath = projects.find((p) => p.name === activeProjectName)?.path ?? "";
 
+  const chrome = chromeForView(nav);
+  const content = (
+    <Box key={`${nav.surface}:${activeProjectName}`} flexDirection="column" flexGrow={1}>
+      {isHome ? (
+        <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
+      ) : (
+        <ProjectContent
+          nav={nav}
+          model={model}
+          runDetail={runDetail}
+          memoryContent={memoryContent}
+          memoryLabel={memoryLabel}
+        />
+      )}
+    </Box>
+  );
+
+  if (chrome === "bare") {
+    // Bare chat chrome: no box border, no tab bar, single-line status.
+    const context = nav.detail === "agentChannel" && nav.agentDetail
+      ? `Agents › ${nav.agentDetail}`
+      : "Global Orchestrator";
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Banner version="V3" compact={context} />
+        {content}
+        <Box marginTop={1}>
+          <InputBar value={nav.input} focused={nav.focus === "input"} disabled={switching} prompt={nav.agentDetail ? `${nav.agentDetail}>` : ">"} />
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       {/* ── Header: ASCII banner ── */}
@@ -490,19 +565,7 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       {/* key forces a full remount on surface/project change so Ink clears the
           previous content's lines completely (avoids ghost lines bleeding from
           one surface/project into the next). */}
-      <Box key={`${nav.surface}:${activeProjectName}`} flexDirection="column" flexGrow={1}>
-        {isHome ? (
-          <HomeContent nav={nav} overview={overview} activeProjectName={activeProjectName} projects={projects} activeProjectPath={activeProjectPath} onOrchestratorMessage={handleOrchestratorMessage} orchestratorMessages={orchestratorMessages} orchestratorRunning={orchestratorRunning} orchestratorInstalled={orchestratorInstalled} />
-        ) : (
-          <ProjectContent
-            nav={nav}
-            model={model}
-            runDetail={runDetail}
-            memoryContent={memoryContent}
-            memoryLabel={memoryLabel}
-          />
-        )}
-      </Box>
+      {content}
 
       {/* ── Output log (command feedback) ── */}
       {blocks.length > 0 ? (

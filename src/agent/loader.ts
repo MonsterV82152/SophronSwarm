@@ -7,7 +7,7 @@
  *
  * See docs/PHASE_0_DESIGN.md §3.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import matter from "gray-matter";
 import { z } from "zod";
 import { resolveModel } from "../llm/providers.js";
@@ -119,4 +119,36 @@ export function loadAgentFile(opts: LoadOptions): LoadAgentResult | LoadAgentErr
 
   log.debug({ name: agent.name, source, model }, "loaded agent");
   return { ok: true, agent };
+}
+
+/**
+ * Patch an agent definition's frontmatter on disk.
+ *
+ * Performs a targeted read-modify-write: only the keys present in `patch`
+ * are updated; the markdown body and all other frontmatter fields are
+ * preserved. Throws on missing file or invalid frontmatter.
+ */
+export function updateAgentFrontmatter(
+  filePath: string,
+  patch: { model?: string; provider?: string },
+): void {
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch (e) {
+    throw new Error(`Could not read agent file '${filePath}': ${(e as Error).message}`);
+  }
+
+  let parsed;
+  try {
+    parsed = matter(raw);
+  } catch (e) {
+    throw new Error(`Invalid frontmatter in '${filePath}': ${(e as Error).message}`);
+  }
+
+  if (patch.model !== undefined) parsed.data.model = patch.model;
+  if (patch.provider !== undefined) parsed.data.provider = patch.provider;
+
+  const updated = matter.stringify(parsed.content, parsed.data);
+  writeFileSync(filePath, updated, "utf8");
 }

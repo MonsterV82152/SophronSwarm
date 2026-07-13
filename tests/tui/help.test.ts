@@ -15,6 +15,7 @@ const ALL_VIEWS: HelpView[] = [
   "project:status",
   "project:agents",
   "project:agentDetail",
+  "project:agentChannel",
   "project:runs",
   "project:runDetail",
   "project:checkpoint",
@@ -96,6 +97,13 @@ describe("helpForView — per-view sections", () => {
     expect(text).toContain("Esc");
   });
 
+  it("project:agentChannel shows /model + Esc", () => {
+    const text = helpForView("project:agentChannel");
+    expect(text).toContain("Agent channel");
+    expect(text).toContain("/model");
+    expect(text).toContain("Esc");
+  });
+
   it("project:runs shows Enter to expand + /runs", () => {
     const text = helpForView("project:runs");
     expect(text).toContain("Runs");
@@ -146,6 +154,14 @@ describe("helpForView — structure", () => {
 });
 
 describe("helpViewFor — nav state → HelpView mapping", () => {
+  it("maps agent channel detail", () => {
+    expect(helpViewFor("project", "agents", "agents", "agentChannel")).toBe("project:agentChannel");
+  });
+
+  it("still maps agent detail", () => {
+    expect(helpViewFor("project", "agents", "agents", "agent")).toBe("project:agentDetail");
+  });
+
   it("maps home surface + tab to home:<tab>", () => {
     expect(helpViewFor("home", "overview", "status", null)).toBe("home:overview");
     expect(helpViewFor("home", "orchestrator", "status", null)).toBe("home:orchestrator");

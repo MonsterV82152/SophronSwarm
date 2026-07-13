@@ -79,6 +79,8 @@ export interface NavState {
   agentDetail: string | null;
   /** Drill-down run detail (the runId/prefix). */
   runDetail: string | null;
+  /** Distinguishes the read-only agent detail from the live chat channel. */
+  detail: "agentDetail" | "agentChannel" | null;
   /** List selection indices, per navigable tab. */
   projectsIndex: number;
   agentsIndex: number;
@@ -96,6 +98,7 @@ export function initialNavState(): NavState {
     focusBeforeInput: "tabs",
     agentDetail: null,
     runDetail: null,
+    detail: null,
     projectsIndex: 0,
     agentsIndex: 0,
     runsIndex: 0,
@@ -129,6 +132,7 @@ export type NavAction =
   | { kind: "goHome" }
   | { kind: "enterProject"; tabIndex?: number }
   | { kind: "openAgentDetail"; name: string }
+  | { kind: "openAgentChannel"; name: string }
   | { kind: "openRunDetail"; runId: string };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -176,7 +180,7 @@ export function navReducer(
     case "tabLeft":
     case "tabRight": {
       if (state.focus === "input") return state; // input swallows arrows
-      if (state.agentDetail || state.runDetail) return state; // detail owns its Esc
+      if (state.agentDetail || state.runDetail || state.detail === "agentChannel") return state; // detail owns its Esc
       const delta = action.kind === "tabLeft" ? -1 : 1;
       if (state.surface === "home") {
         return { ...state, homeTabIndex: clamp(state.homeTabIndex + delta, HOME_TABS.length), focus: "tabs" };
@@ -187,7 +191,7 @@ export function navReducer(
     // ── Enter a tab (drill from tab bar into content) ──────────────────────
     case "enterTab": {
       if (state.focus === "input") return state;
-      if (state.agentDetail || state.runDetail) return state;
+      if (state.agentDetail || state.runDetail || state.detail === "agentChannel") return state;
       // Overview is display-only — no content focus. Stay on tabs (no-op).
       if (state.surface === "home" && activeHomeTab(state) === "overview") return state;
       // All other tabs (incl. Orchestrator chat) drill into content focus.
@@ -197,8 +201,8 @@ export function navReducer(
     // ── Exit up (Esc / ↑ at top) ───────────────────────────────────────────
     case "exitUp": {
       if (state.focus === "input") return state;
-      // Detail → back to its parent content.
-      if (state.agentDetail) return { ...state, agentDetail: null, focus: "content" };
+      // Detail / channel → back to its parent content.
+      if (state.agentDetail) return { ...state, agentDetail: null, detail: null, focus: "content" };
       if (state.runDetail) return { ...state, runDetail: null, focus: "content" };
       // Content → back to tabs.
       if (state.focus === "content") return { ...state, focus: "tabs" };
@@ -212,7 +216,7 @@ export function navReducer(
     // ── List vertical movement (only in content focus, not detail) ─────────
     case "listUp":
     case "listDown": {
-      if (state.focus !== "content" || state.agentDetail || state.runDetail) return state;
+      if (state.focus !== "content" || state.agentDetail || state.runDetail || state.detail === "agentChannel") return state;
       const delta = action.kind === "listUp" ? -1 : 1;
       if (state.surface === "home" && activeHomeTab(state) === "projects") {
         return { ...state, projectsIndex: clamp(state.projectsIndex + delta, Math.max(projectsLen, 1)) };
@@ -227,7 +231,7 @@ export function navReducer(
 
     // ── Open the selected item ─────────────────────────────────────────────
     case "openSelected": {
-      if (state.focus !== "content" || state.agentDetail || state.runDetail) return state;
+      if (state.focus !== "content" || state.agentDetail || state.runDetail || state.detail === "agentChannel") return state;
       // Handled by the App (which knows the data + can switch services). The
       // reducer just signals intent via openAgentDetail / openRunDetail /
       // enterProject, which the App dispatches. So this is a no-op here; the
@@ -237,7 +241,7 @@ export function navReducer(
     }
 
     case "closeDetail": {
-      if (state.agentDetail) return { ...state, agentDetail: null, focus: "content" };
+      if (state.agentDetail) return { ...state, agentDetail: null, detail: null, focus: "content" };
       if (state.runDetail) return { ...state, runDetail: null, focus: "content" };
       return state;
     }
@@ -268,7 +272,7 @@ export function navReducer(
 
     // ── Programmatic navigation (from command handlers) ────────────────────
     case "goHome":
-      return { ...state, surface: "home", focus: "tabs", agentDetail: null, runDetail: null };
+      return { ...state, surface: "home", focus: "tabs", agentDetail: null, runDetail: null, detail: null };
     case "enterProject":
       return {
         ...state,
@@ -277,11 +281,14 @@ export function navReducer(
         focus: "tabs",
         agentDetail: null,
         runDetail: null,
+        detail: null,
       };
     case "openAgentDetail":
-      return { ...state, agentDetail: action.name, runDetail: null, focus: "content" };
+      return { ...state, agentDetail: action.name, detail: "agentDetail", runDetail: null, focus: "content" };
+    case "openAgentChannel":
+      return { ...state, agentDetail: action.name, detail: "agentChannel", runDetail: null, focus: "content" };
     case "openRunDetail":
-      return { ...state, runDetail: action.runId, agentDetail: null, focus: "content" };
+      return { ...state, runDetail: action.runId, agentDetail: null, detail: null, focus: "content" };
 
     default:
       return state;
