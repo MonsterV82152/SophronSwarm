@@ -248,6 +248,11 @@ is the authoritative current plan. **M1–M8 + M10 are complete** (657/657 tests
 | **M8 — Wire Global Orchestrator into Home** | Real global-orchestrator chat in Home › Orchestrator tab. | ✅ DONE |
 | **M9 — Web UI (Phase 5b)** | Promote V2 debug UI to Next.js. | ⏸ Deferred |
 | **M10 — Operator Ergonomics** | `add-provider`/`edit-provider`/`remove-provider`; `sophron projects` mgmt; model-aware architect. | ✅ DONE |
+| **V3.1.0-M1 — Provider + Model Refactor** | Removed tiers/defaults/`inherit`; `model:`+`provider:` required; added provider `description`. | ✅ DONE |
+| **V3.1.0-M2 — G_O Consolidation** | Remove architect; G_O designs rosters inline via `propose_roster`. | 🔜 Next |
+| **V3.1.0-M3 — Chrome Layering + `/model`** | Bare chrome for chat views; `/model` slash command (persists to disk). | 🔜 |
+| **V3.1.0-M4 — Agent Channels** | Live stream + interrupt + interactive chat per agent. | 🔜 |
+| **V3.1.0-M5 — CLI + Wizard + Polish** | Provider commands consolidated; `sophron init` provider wizard. | 🔜 |
 
 ---
 
@@ -264,6 +269,9 @@ is the authoritative current plan. **M1–M8 + M10 are complete** (657/657 tests
 9. **Global orchestrator has NO memory (decided 2026-07-07):** It reads the project registry (`~/.sophron/projects.json`) and the current chat thread — nothing else. No per-agent `MEMORY.md`, no shared-memory injection. It must not inherit or interfere with any project's memory. Tool set is scoped: `delegate`, `list_projects`, `propose_project`, `init_project`, read-only file tools over `~/.sophron/`. **No** `run_command` / `apply_patch`.
 10. **Standardized per-project orchestrator = a copy (decided 2026-07-07):** `sophron init` / project creation seeds an identical `orchestrator.md` into every project's `agents/`. Each copy is independently editable and carries its own per-project memory.
 11. **Project location (decided 2026-07-07):** New projects are created at `~/sophron_workspace/<name>` and registered in `~/.sophron/projects.json`.
+12. **No tiers / no defaults (decided 2026-07-12, V3.1.0-M1):** The entire tier system (`ModelTier` type, `modelTier` field, `tiers` config, tier-resolution logic) is **removed**. Every agent requires a concrete `model:` id + a `provider:` name. No built-in provider defaults, no `defaultModel`, no `inherit`, no prefix shortcuts. `resolveModel(model, provider)` is the single chokepoint. Rationale: frontier AI models constantly change; a fixed mapping is stale on arrival.
+13. **Provider descriptions (decided 2026-07-12, V3.1.0-M1):** Provider instances carry a `description` field (first-class) so the architect/G_O can understand what each provider is good for when designing rosters.
+14. **G_O absorbs architect (decided 2026-07-12, V3.1.0-M2):** The separate architect agent is **removed entirely**. The global orchestrator designs architectures and drafts rosters inline via `propose_roster` (full conversation context). No `delegate` tool on the G_O. Rationale: the G_O has full context; a second model = configuration mess + information loss.
 
 ## 10. Technology Stack (decided)
 
@@ -304,9 +312,9 @@ V2 was Python. For V3's stated priorities (**strong front-end + speed**, multi-a
 
 ## 11. Remaining Open Questions
 
-1. ~~**Ollama classifier model name**~~ — **RESOLVED (Phase 6):** `ollama:qwen3.5:9b-fast` vets each mutating command (also reused by the M1 purifier's Tier 2).
+1. ~~**Ollama classifier model name**~~ — **RESOLVED (Phase 6):** `qwen3.5:9b-fast` on the `ollama` provider vets each mutating command (also reused by the purifier's Tier 2).
 2. **Default permission mode for the bootstrap-approved agents** — `default` (prompt) for the cautious start, or `accept-edits` to reduce friction?
 3. **Should the global orchestrator's chat history persist across sessions?** — it has no memory tier, but the Orchestrator-tab conversation list implies persistence. (Recommend: persist chat threads, but do NOT inject them as "memory".)
 4. **Health-check definitions for the Home Overview** — recommend concrete signals: failed/stuck runs, pending approvals older than N, token-budget breaches, agents in HALT.
 
-All major architectural and stack decisions are now locked (see §9, items 1–11). Phases 0–6 + milestones M1–M8 + M10 complete (657/657 tests); M9 (web UI) deferred. See individual design/completion docs under `docs/` and [`ROADMAP.md`](./ROADMAP.md) for the full milestone plan.
+All major architectural and stack decisions are now locked (see §9, items 1–14). Phases 0–6 + milestones M1–M8 + M10 + V3.1.0-M1 complete (647/647 tests); M9 (web UI) deferred. See [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) for the V3.1.0 milestone plan and [`ROADMAP.md`](./ROADMAP.md) for the full milestone history.

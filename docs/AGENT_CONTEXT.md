@@ -2,8 +2,8 @@
 
 > **Purpose:** A self-contained brief that gives another AI agent full context to continue developing SophronSwarm V3. Read this top to bottom before writing any code.
 >
-> **Last updated:** 2026-07-12
-> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete (657/657 tests passing, clean `tsc`). The core CLI vision is done: box-chrome tabbed TUI (M3 rewrite), context-aware `/help` (M4), `sophron init` templates (M5), batch roster bootstrap (M6), global orchestrator meta-layer with no memory (M7), global-orchestrator chat wired into Home (M8), and operator ergonomics — add/edit/remove providers, model-aware architect, project management (M10). **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the authoritative milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
+> **Last updated:** 2026-07-13
+> **Current state:** Phases 0–6 complete. Milestones **M1–M8 + M10** complete. **V3.1.0-M1** (provider + model contract refactor — removed tiers, removed built-in defaults, `provider:`+`model:` required, added `description`) complete (647/647 tests, clean `tsc`). The core CLI vision is done; V3.1.0 features are in progress (see [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) for the atomic milestone plan). **M9 (web UI)** remains deferred (CLI-first is locked). See [`ROADMAP.md`](./ROADMAP.md) for the milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects).
 
 ---
 
@@ -34,14 +34,15 @@
 | **Agent creation** | One-time bootstrap; architect drafts full roster; ALL drafts require operator approval; then closed | Prevents uncontrolled self-modifying swarms |
 | **MCP** | Lazy by default (`alwaysExpose:false`) + `mcp_tool_search` meta-tool | MCP token sprawl is the silent budget killer |
 | **Agent soft cap** | Warn (don't block) at >12 agents per workspace | Keeps org chart navigable |
-| **Auto-mode classifier** | `ollama:qwen3.5:9b-fast` vets each mutating command; also reused by the M1 purifier Tier 2 | Free, offline, low-latency |
-| **Output purifier (M1)** | Deterministic Tier 1 + cheap-model Tier 2, wired into `ToolDispatcher.dispatch`; raw output kept under `.sophron/raw/` + `read_raw_output` escape hatch | Compresses noisy tool output before it enters history |
-| **Providers (M2)** | Free-form **named provider instances** (`{name, kind, baseURL, ...}`); `${VAR}` env expansion; `provider:` frontmatter; legacy auto-migrated | One machine → many endpoints; multi-machine Ollama |
+| **Auto-mode classifier** | `qwen3.5:9b-fast` on the `ollama` provider vets each mutating command; also reused by the purifier Tier 2 | Free, offline, low-latency |
+| **Output purifier** | Deterministic Tier 1 + cheap-model Tier 2, wired into `ToolDispatcher.dispatch`; raw output kept under `.sophron/raw/` + `read_raw_output` escape hatch | Compresses noisy tool output before it enters history |
+| **Providers (V3.1.0-M1)** | Free-form **named provider instances** (`{name, kind, baseURL, description, ...}`); `${VAR}` env expansion; `provider:` frontmatter; **no built-in defaults** — operators must configure explicitly | One machine → many endpoints; multi-machine Ollama |
+| **Model contract (V3.1.0-M1)** | Every agent requires BOTH `model:` (concrete id, e.g. `deepseek/deepseek-v4-flash`) AND `provider:` (configured name). **No tiers, no `inherit`, no `defaultModel`, no fallback chain.** `resolveModel(model, provider)` is the single chokepoint. | "No 1 model fits all scenarios" + frontier models change constantly, so a fixed mapping is stale on arrival |
 | **Hierarchy (2026-07-07)** | **Two-tier:** one **global orchestrator** above all projects (`~/.sophron/`) + a **per-project orchestrator** seeded into each project's `agents/` by `sophron init` | SophronSwarm is multi-project; the global one is the operator's "CEO" |
 | **Global orchestrator memory** | **NONE.** Reads only the project registry + current chat thread. No per-agent / shared memory injection | Prevents cross-project interference; it starts/designs projects, never works inside them |
-| **Global orchestrator tools** | `delegate`, `list_projects`, `propose_project`, `init_project`, read-only fs over `~/.sophron/`. **No** `run_command`/`apply_patch` | Scoped — no codebase workspace; scaffolding is controlled |
+| **Global orchestrator tools** | `list_projects`, `propose_project`, `init_project`, `propose_roster`, `propose_agent`, `list_providers`, read-only fs over `~/.sophron/`. **No** `delegate` (V3.1.0-M2 — architect removed, G_O designs rosters inline), **No** `run_command`/`apply_patch` | Scoped — no codebase workspace; scaffolding is controlled |
 | **Project location (2026-07-07)** | New projects created at `~/sophron_workspace/<name>`, registered in `~/.sophron/projects.json` | |
-| **Roster shape** | `model: ollama:qwen3.5:9b-thinking` is available locally | Used for all demo agents |
+| **Roster shape** | `model:` is always a concrete id + `provider:` is a configured name. E.g. `model: qwen3.5:9b-thinking` + `provider: ollama` | V3.1.0-M1: no tiers, no prefixes |
 
 ---
 
@@ -61,9 +62,9 @@ V3/
 ├── src/
 │   ├── index.ts             # CLI entry
 │   ├── cli.ts               # commander subcommands: run / agents / replay
-│   ├── types.ts             # Core types (AgentDefinition, AgentRunState, LLMMessage, ToolCall/Result, Usage, DelegationContext, HandoffPacket)
+│   ├── types.ts             # Core types (AgentDefinition [model+provider required, no modelTier], AgentRunState, LLMMessage, ToolCall/Result, Usage, DelegationContext, HandoffPacket)
 │   ├── agent/
-│   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; resolves model tier ONCE at load; noMemory flag (M7)
+│   │   ├── loader.ts        # gray-matter + zod → AgentDefinition; model+provider REQUIRED (V3.1.0-M1); resolves once at load via resolveModel(model, provider); noMemory flag (M7)
 │   │   ├── registry.ts      # indexed collection + chokidar hot-reload + 12-agent soft cap
 │   │   ├── loop.ts          # THE AGENTIC LOOP (the heart) — pulls memory from services into prompt; skips memory when agent.noMemory (M7)
 │   │   ├── delegation.ts    # checkPolicy (depth+cycle+allowlist), buildChildCtx, buildHandoffPacket, formatHandoffPacket
@@ -95,8 +96,8 @@ V3/
 │   ├── services/
 │   │   └── lifecycle.ts     # buildServices / closeServices / switchServices (teardown→rebuild on project switch) — REUSED by M3
 │   ├── llm/
-│   │   ├── providers.ts     # M2: named provider instances ({name,kind,baseURL,...}) + resolveModel/resolveModelWithProvider + expandEnv + legacy migration
-│   │   ├── client.ts        # one OpenAI-compat client per instance; retry-controlled (timeout=120, maxRetries=0); listModels
+│   │   ├── providers.ts     # V3.1.0-M1: named provider instances ({name,kind,baseURL,description}) + resolveModel(model, provider) [BOTH required, no tiers/defaults] + expandEnv + legacy migration + add/update/remove mutators
+│   │   ├── client.ts        # one OpenAI-compat client per instance; retry-controlled (timeout=120, maxRetries=0); listModels; provider REQUIRED on complete()
 │   │   └── promptBuilder.ts # volatility-ordered messages for prefix-cache hits; injects per-agent + shared memory
 │   ├── tools/
 │   │   ├── schema.ts        # ToolSpec, ToolContext (+ SharedServices incl. memory stores + purifier), ToolHandler
@@ -132,7 +133,7 @@ V3/
 │       ├── log.ts                 # pino (pretty in dev)
 │       ├── tokenize.ts            # approxTokens (chars/3.5)
 │       └── retry.ts               # isTransientError + retryTransient (backoff + jitter)
-├── tests/                   # 34 suites, 657 tests, all passing (Phases 0–6 + M1–M8 + M10)
+├── tests/                   # 34 suites, 647 tests, all passing (Phases 0–6 + M1–M8 + M10 + V3.1.0-M1)
 │   ├── util/retry.test.ts                       (9)
 │   ├── state/checkpointer.test.ts               (7)
 │   ├── tools/dispatcher.test.ts                 (11)
@@ -169,7 +170,7 @@ V3/
 - `npm run dev -- replay <runId>` — print a run's JSONL events
 - `npm run dev -- providers` — list configured provider instances
 - `npm run dev -- providers <name>` — connectivity-test a provider (`GET /v1/models`)
-- `npm test` — vitest (657 tests; Phases 0–6 + M1–M8 + M10)
+- `npm test` — vitest (647 tests; Phases 0–6 + M1–M8 + M10 + V3.1.0-M1)
 - `npm run dev` (no args) — launch the interactive TUI dashboard
 - `npm run typecheck` — `tsc --noEmit`
 
@@ -283,10 +284,13 @@ flowchart TB
 | **M4 — Context-aware `/help`** | `helpForView(view)` over M3's 11 views; core + per-view sections. | `tui/help.ts` (21 tests) |
 | **M5 — `sophron init` Templates** | 4 built-in templates (minimal/cli/webapp/data-pipeline) + user templates. Every scaffold seeds the standardized per-project `orchestrator.md` + installs the global `architect.md`. | `init/templates.ts`; `sophron init [--template] [--install-architect] [--install-orchestrator]` |
 | **M6 — `propose_roster`** | Batch draft→approve→close (transactional `writeRoster`). Runtime companion to M5 templates. | `agent/drafts.ts` (batch methods), `agent/serialize.ts`, `tools/builtin/propose_roster.ts`; CLI `sophron agents --drafts/--approve*/--reject*` |
-| **M7 — Global Orchestrator** | The "CEO" agent above all projects. **`noMemory: true`** frontmatter → loop skips shared + per-agent memory injection. Scoped tools: `list_projects`/`propose_project`/`init_project` + `delegate` to architect. No `run_command`/`apply_patch`. | `tools/builtin/global.ts`, `init/templates.ts` (`GLOBAL_ORCHESTRATOR`); `AgentDefinition.noMemory` |
+| **M7 — Global Orchestrator** | The "CEO" agent above all projects. **`noMemory: true`** frontmatter → loop skips shared + per-agent memory injection. Scoped tools: `list_projects`/`propose_project`/`init_project`. **V3.1.0-M2 (planned):** absorbs architect — adds `propose_roster`/`propose_agent`/`list_providers`, removes `delegate`. | `tools/builtin/global.ts`, `init/templates.ts` (`GLOBAL_ORCHESTRATOR`); `AgentDefinition.noMemory` |
 | **M8 — Wire Global Orchestrator into Home** | Real global-orchestrator chat (`OrchestratorChat`) in the Home › Orchestrator tab, backed by `runAgent`. Project-switch ghost-lines fix; `/clear` resets chat. | `tui/components/OrchestratorChat.tsx` |
 | **M9 — Web UI** | ⏸ **Deferred** — CLI-first is locked. Shares the JSONL event log; low-dependency; can be picked up in parallel. | — |
 | **M10 — Operator Ergonomics** | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix). | `llm/providers.ts` (mutators), `util/prompts.ts`, `tools/builtin/global.ts` (`list_providers`) |
+| **V3.1.0-M1 — Provider + Model Refactor** ✅ | Removed the ENTIRE tier system (`ModelTier`, `modelTier`, `tiers` config), removed built-in defaults (`builtinDefaults`/`mergeWithDefaults`), removed `defaultModel` field, made `model:` + `provider:` REQUIRED, added provider `description`. `resolveModel(model, provider)` is the single chokepoint. | `llm/providers.ts`, `types.ts`, `agent/loader.ts`, `tools/builtin/global.ts`; all agent templates + tests updated. |
+
+**See [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) for the V3.1.0 milestone plan (M1–M5).**
 
 **See [`ROADMAP.md`](./ROADMAP.md) for full detail on each milestone.**
 
@@ -308,7 +312,7 @@ flowchart TB
 
 ## 7. First message to send the next agent
 
-> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/ROADMAP.md` for the authoritative milestone plan and the **two-tier hierarchy vision** (global orchestrator above all projects + per-project orchestrator). Phases 0–6 are complete; milestones **M1–M8 + M10** are complete (657/657 tests). The core CLI vision is done: the box-chrome tabbed TUI (M3 rewrite), context-aware `/help` (M4), `sophron init` templates (M5), batch roster bootstrap via `propose_roster` (M6), the global orchestrator meta-layer with `noMemory` (M7), the global-orchestrator chat wired into the Home Orchestrator tab (M8), and operator ergonomics — `add-provider`/`edit-provider`/`remove-provider`, model-aware architect, `sophron projects` management (M10). **M9 (web UI)** is deferred (CLI-first is locked). Run `npm test` to confirm the baseline (657/657) before changing anything."
+> "Continue SophronSwarm V3 development. Read `docs/AGENT_CONTEXT.md` first, then `docs/V3.1.0_PLAN.md` for the atomic V3.1.0 milestone plan (§4 is a self-contained spec for M2 — G_O consolidation). Phases 0–6 are complete; milestones M1–M8 + M10 are complete; **V3.1.0-M1** (provider + model contract refactor) is complete (647/647 tests). Key V3.1.0 change: every agent requires `model:` (concrete id) + `provider:` (configured name) — no tiers, no defaults. Run `npm test` to confirm the baseline (647/647) before changing anything."
 
 ---
 

@@ -22,7 +22,7 @@ import { AgentRegistry } from "./agent/registry.js";
 import { AgentDraftStore } from "./agent/drafts.js";
 import { buildServices, closeServices } from "./services/lifecycle.js";
 import { registerProject, removeProject, renameProject, togglePin, listProjects, findByName } from "./project/registry.js";
-import { scaffoldProject, installGlobalArchitect, installGlobalOrchestrator, listTemplates } from "./init/templates.js";
+import { scaffoldProject, installGlobalOrchestrator, listTemplates } from "./init/templates.js";
 import { runAgent } from "./agent/loop.js";
 import { log } from "./util/log.js";
 import { prompt, promptSelect, promptConfirm, promptSecret } from "./util/prompts.js";
@@ -619,9 +619,8 @@ export async function runCli(argv: string[]): Promise<void> {
     .option("-p, --path <dir>", "project path (defaults to ~/sophron_workspace/<name>)")
     .option("-f, --force", "overwrite an existing agents/ directory")
     .option("--list", "list available templates and exit")
-    .option("--install-architect", "install/update the global architect template at ~/.sophron/agents/architect.md")
     .option("--install-orchestrator", "install/update the global orchestrator template at ~/.sophron/agents/global-orchestrator.md (M7)")
-    .action((opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installArchitect?: boolean; installOrchestrator?: boolean }) => {
+    .action((opts: { template?: string; name?: string; path?: string; force?: boolean; list?: boolean; installOrchestrator?: boolean }) => {
       // ── --list: print templates + exit ──
       if (opts.list) {
         const templates = listTemplates();
@@ -630,17 +629,6 @@ export async function runCli(argv: string[]): Promise<void> {
           console.log(`  ${chalk.cyan(t.name.padEnd(16))} ${chalk.gray(t.description)}`);
         }
         console.log(chalk.gray("\nUsage: sophron init --template <name> --name <alias>"));
-        return;
-      }
-
-      // ── --install-architect: write the global architect + exit ──
-      if (opts.installArchitect) {
-        const written = installGlobalArchitect(opts.force);
-        if (written) {
-          console.log(chalk.green(`✓ Installed global architect → ${written}`));
-        } else {
-          console.log(chalk.yellow("Global architect already exists (use --force to overwrite)."));
-        }
         return;
       }
 

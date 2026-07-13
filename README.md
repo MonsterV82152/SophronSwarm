@@ -23,8 +23,8 @@ sophron run <agent> "<task>" [--dir .]   # run one agent on a task
 sophron agents [--drafts|--approve <n>...|--reject <n>...]   # list / manage drafts
 
 # LLM providers (config in ~/.sophron/config.json)
-sophron add-provider                     # interactive: prompt for name/kind/url/key/model
-sophron add-provider --name x --kind ollama --model qwen3.5:9b   # non-interactive (flags)
+sophron add-provider                     # interactive: prompt for name/kind/url/key/description
+sophron add-provider --name x --kind ollama   # non-interactive (flags + defaults)
 sophron edit-provider <name>             # edit existing (add/change an API key, etc.)
 sophron edit-provider <name> --api-key '${OPENROUTER_API_KEY}'  # non-interactive edit
 sophron remove-provider <name>           # remove an instance

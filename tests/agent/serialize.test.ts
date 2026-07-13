@@ -23,11 +23,23 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
-      model: "frontier",
+      model: "qwen3.5:9b",
       permissionMode: "default",
     });
-    expect(out).toContain("model: frontier");
+    expect(out).toContain('model: "qwen3.5:9b"');
     expect(out).not.toContain("model: inherit");
+  });
+
+  it("serializes provider when given", () => {
+    const out = serializeDraft({
+      name: "x",
+      description: "d",
+      systemPrompt: "s",
+      model: "qwen3.5:9b",
+      provider: "ollama",
+      permissionMode: "default",
+    });
+    expect(out).toContain("provider: ollama");
   });
 
   it("omits optional fields when not provided", () => {

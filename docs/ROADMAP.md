@@ -4,10 +4,13 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-12):** 657/657 tests passing, clean `tsc`.
-> Phases 0–6 complete. M1–M8 + M10 complete. M9 (web UI) deferred.
+> **Baseline (verified 2026-07-13):** 647/647 tests passing, clean `tsc`.
+> Phases 0–6 complete. M1–M8 + M10 complete. **V3.1.0-M1** (provider + model
+> refactor — tiers removed, concrete model+provider required) complete.
+> M9 (web UI) deferred. See [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) for the
+> V3.1.0 milestone plan.
 >
-> **Last updated:** 2026-07-12
+> **Last updated:** 2026-07-13
 
 ---
 
@@ -20,13 +23,13 @@ orchestrator** inside each project.
 ```
 SophronSwarm (global)                          ← operator's home
   └─ Global Orchestrator (one, ~/.sophron/)      ← the "CEO": proposes & creates projects
-       ├─ delegates to → Global Architect          ← drafts each project's roster (M6)
+       ├─ designs rosters inline via propose_roster  ← V3.1.0-M2 (architect removed)
        ├─ Project A  → per-project orchestrator + its own agent roster
        ├─ Project B  → per-project orchestrator + its own agent roster
        └─ ...
 ```
 
-**Key principles (locked 2026-07-07):**
+**Key principles (locked 2026-07-07, updated V3.1.0):**
 - **Global orchestrator has NO memory.** It reads the project registry
   (`~/.sophron/projects.json`) and the current chat thread — nothing else. It
   is a pure project-lifecycle manager; it does not work inside projects or
@@ -34,16 +37,17 @@ SophronSwarm (global)                          ← operator's home
 - **Each project gets a standardized orchestrator.** Project creation seeds
   an identical `orchestrator.md` into every project's `agents/`. Each copy is
   independently editable and carries its own per-project memory.
-- **Global orchestrator tool set is scoped:** `delegate` (to the architect),
+- **Global orchestrator tool set is scoped:** `list_projects`,
   `propose_project` / `init_project` (controlled scaffolding, not raw shell),
-  `list_projects`, read-only file tools over `~/.sophron/`. No `run_command`
-  / `apply_patch` — it has no codebase workspace.
+  `propose_roster` / `propose_agent` / `list_providers` (inline architecture
+  design — V3.1.0-M2), read-only file tools over `~/.sophron/`. **No**
+  `delegate` (architect removed), **No** `run_command` / `apply_patch`.
 - **Projects live at `~/sophron_workspace/<name>`.**
 - **Project creation flow:** operator proposes an idea in the Home ›
-  Orchestrator chat → global orchestrator delegates to the global architect →
-  architect drafts the roster (M6 `propose_roster`, one approval gate) →
-  operator approves → `init_project` scaffolds the project + seeds the
-  standardized orchestrator → registered in `projects.json`.
+  Orchestrator chat → global orchestrator designs the roster inline (M6
+  `propose_roster`, one approval gate) → operator approves → `init_project`
+  scaffolds the project + seeds the standardized orchestrator → registered in
+  `projects.json`.
 
 ---
 
@@ -68,6 +72,11 @@ SophronSwarm (global)                          ← operator's home
 | **M8 — Wire Global Orchestrator into TUI Home** | ✅ Complete | real global-orchestrator chat in Home › Orchestrator; project-switch ghost-lines fix; `/clear` resets chat | 
 | **M9 — Web UI (Phase 5b)** | ⏸ Deferred | CLI-first is locked (`PROJECT_OVERVIEW.md` §7.6); low-dependency, parallelizable |
 | **M10 — Operator Ergonomics** | ✅ Complete | `sophron add-provider`/`edit-provider`/`remove-provider` (interactive + flags); `sophron projects` (list/remove/rename/pin); model-aware architect (`list_providers` tool + tier guidance + roster-tool allowlist fix) |
+| **V3.1.0-M1 — Provider + Model Refactor** | ✅ Complete | Removed tiers/defaults/`inherit`/`defaultModel`; `model:`+`provider:` required; provider `description` field; `resolveModel(model, provider)` single chokepoint. 647 tests. |
+| **V3.1.0-M2 — G_O Consolidation** | 🔜 Next | Remove architect; G_O designs rosters inline via `propose_roster`. See [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) §4. |
+| **V3.1.0-M3 — Chrome + `/model`** | 🔜 | Bare chrome for chat views; `/model` slash command (persists). |
+| **V3.1.0-M4 — Agent Channels** | 🔜 | Live stream + interrupt + interactive chat per agent. |
+| **V3.1.0-M5 — CLI + Wizard + Polish** | 🔜 | Provider commands consolidated; `sophron init` provider wizard. |
 
 ---
 
@@ -369,7 +378,9 @@ M9 (web UI) ── optional / parallel / deferred
 
 ## Starting point
 
-M3–M8 are ✅ complete and **M10 (operator ergonomics)** is ✅ complete
-(657/657 tests). The core CLI vision (M3–M8 + M10) is now complete. **M9
-(web UI)** remains deferred (CLI-first is locked); it can be picked up in
-parallel by a separate effort.
+The core CLI vision (Phases 0–6 + M1–M8 + M10) is ✅ complete. **V3.1.0-M1**
+(provider + model contract refactor) is ✅ complete (647/647 tests, clean
+`tsc`). The next milestone is **V3.1.0-M2** (G_O consolidation — remove
+architect, G_O designs rosters inline). See
+[`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) §4 for the atomic, self-contained spec.
+**M9 (web UI)** remains deferred (CLI-first is locked).

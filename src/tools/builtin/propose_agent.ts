@@ -37,7 +37,8 @@ export const propose_agent: ToolSpec = {
       description: { type: "string", description: "One-line description of when to delegate to this agent." },
       systemPrompt: { type: "string", description: "The agent's system prompt (markdown body)." },
       tools: { type: "array", items: { type: "string" }, description: "Tool allowlist." },
-      model: { type: "string", description: "Model tier (cheap=small/routine, mid=general, frontier=hardest reasoning, inherit) or a concrete prefixed id like 'ollama:qwen3.5:9b'. Match the model to the task size — use 'cheap' for narrow/mechanical work and reserve 'frontier' for hard reasoning. Call list_providers first to see what is configured." },
+      model: { type: "string", description: "Concrete model id (e.g. 'qwen3.5:9b', 'deepseek/deepseek-v4-flash'). Match the model to the task size — use small/cheap models for narrow/mechanical work and reserve strong reasoning models for hard tasks. Call list_providers first to see what is configured." },
+      provider: { type: "string", description: "Configured provider name (from list_providers). Required — every agent needs a provider." },
       permissionMode: {
         type: "string",
         enum: ["default", "accept-edits", "auto", "plan", "full-auto"],
@@ -67,6 +68,7 @@ export const propose_agent: ToolSpec = {
       systemPrompt,
       tools: args["tools"],
       model: args["model"],
+      provider: args["provider"],
       permissionMode,
       delegateAllowlist: args["delegateAllowlist"],
       mcpServers: args["mcpServers"],

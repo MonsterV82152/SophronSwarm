@@ -15,6 +15,7 @@ export interface DraftFields {
   systemPrompt: string;
   tools?: unknown;
   model?: unknown;
+  provider?: unknown;
   permissionMode: string;
   delegateAllowlist?: unknown;
   mcpServers?: unknown;
@@ -32,6 +33,7 @@ export function serializeDraft(f: DraftFields): string {
   }
   if (typeof f.model === "string") fm.push(`model: ${yamlString(f.model)}`);
   else fm.push("model: inherit");
+  if (typeof f.provider === "string") fm.push(`provider: ${yamlString(f.provider)}`);
   fm.push(`permissionMode: ${yamlString(f.permissionMode)}`);
   if (Array.isArray(f.delegateAllowlist) && f.delegateAllowlist.length > 0) {
     fm.push("delegateAllowlist:");

@@ -10,13 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   scaffoldProject,
-  installGlobalArchitect,
   installGlobalOrchestrator,
   listTemplates,
   getTemplate,
   BUILTIN_TEMPLATES,
   STANDARD_ORCHESTRATOR,
-  GLOBAL_ARCHITECT,
   GLOBAL_ORCHESTRATOR,
   userTemplatesDir,
 } from "../../src/init/templates.js";
@@ -182,71 +180,29 @@ describe("scaffoldProject", () => {
   });
 });
 
-describe("installGlobalArchitect", () => {
-  it("writes the architect to ~/.sophron/agents/architect.md", () => {
-    const result = installGlobalArchitect();
-    expect(result).toBeTruthy();
-    expect(existsSync(join(tempHome, ".sophron", "agents", "architect.md"))).toBe(true);
-
-    const content = readFileSync(join(tempHome, ".sophron", "agents", "architect.md"), "utf8");
-    expect(content).toBe(GLOBAL_ARCHITECT);
-    expect(content).toContain("name: architect");
-  });
-
-  it("returns null without overwriting if it already exists (no force)", () => {
-    installGlobalArchitect();
-    const second = installGlobalArchitect();
-    expect(second).toBeNull();
-  });
-
-  it("overwrites with force=true", () => {
-    installGlobalArchitect();
-    const second = installGlobalArchitect(true);
-    expect(second).toBeTruthy();
-  });
-});
-
-describe("STANDARD_ORCHESTRATOR + GLOBAL_ARCHITECT + GLOBAL_ORCHESTRATOR", () => {
+describe("STANDARD_ORCHESTRATOR + GLOBAL_ORCHESTRATOR", () => {
   it("orchestrator is the per-project coordinator (delegates)", () => {
     expect(STANDARD_ORCHESTRATOR).toContain("orchestrator");
     expect(STANDARD_ORCHESTRATOR).toContain("delegate");
     expect(STANDARD_ORCHESTRATOR).toContain("remember");
   });
 
-  it("global architect drafts rosters + does not run agents", () => {
-    expect(GLOBAL_ARCHITECT).toContain("architect");
-    expect(GLOBAL_ARCHITECT).toContain("roster");
-    expect(GLOBAL_ARCHITECT).toContain("plan"); // permissionMode: plan
-  });
-
-  it("global architect can actually draft (has the roster tools + model discovery)", () => {
-    // CRITICAL: the architect must list the tools it needs to draft rosters.
-    // Without these, the dispatcher's allowlist (agent.tools) blocks them and
-    // the architect can NEVER call propose_roster — a real bug fixed in M10.
-    expect(GLOBAL_ARCHITECT).toContain("propose_roster");
-    expect(GLOBAL_ARCHITECT).toContain("propose_agent");
-    expect(GLOBAL_ARCHITECT).toContain("list_providers");
-  });
-
-  it("global architect is model-aware (right-sizes models to task size)", () => {
-    expect(GLOBAL_ARCHITECT).toMatch(/cheap/i);
-    expect(GLOBAL_ARCHITECT).toMatch(/frontier/i);
-    expect(GLOBAL_ARCHITECT).toMatch(/list_providers/); // told to discover configured models
-    expect(GLOBAL_ARCHITECT).toMatch(/match the model to the task size/i);
-  });
-
-  it("global orchestrator is the no-memory CEO (M7)", () => {
+  it("global orchestrator is the no-memory CEO with inline roster design (M7 + V3.1.0-M2)", () => {
     expect(GLOBAL_ORCHESTRATOR).toContain("name: global-orchestrator");
     expect(GLOBAL_ORCHESTRATOR).toContain("noMemory: true"); // CRITICAL: no memory injection
     expect(GLOBAL_ORCHESTRATOR).toContain("list_projects");
     expect(GLOBAL_ORCHESTRATOR).toContain("propose_project");
     expect(GLOBAL_ORCHESTRATOR).toContain("init_project");
-    expect(GLOBAL_ORCHESTRATOR).toContain("delegate");
+    // V3.1.0-M2: the G_O designs rosters INLINE (no more delegate to architect).
+    expect(GLOBAL_ORCHESTRATOR).toContain("propose_roster");
+    expect(GLOBAL_ORCHESTRATOR).toContain("propose_agent");
+    expect(GLOBAL_ORCHESTRATOR).toContain("list_providers");
+    // The global orchestrator must NOT delegate anymore (architect removed).
+    expect(GLOBAL_ORCHESTRATOR).not.toContain("delegate");
+    expect(GLOBAL_ORCHESTRATOR).not.toContain("delegateAllowlist");
     // The global orchestrator must NOT have run_command / apply_patch.
     expect(GLOBAL_ORCHESTRATOR).not.toContain("run_command");
     expect(GLOBAL_ORCHESTRATOR).not.toContain("apply_patch");
-    // It may only delegate to the architect.
-    expect(GLOBAL_ORCHESTRATOR).toContain("architect");
   });
 });
 
@@ -274,11 +230,4 @@ describe("installGlobalOrchestrator (M7)", () => {
     expect(second).toBeTruthy();
   });
 
-  it("the global orchestrator + architect can coexist (distinct names)", () => {
-    const orch = installGlobalOrchestrator();
-    const arch = installGlobalArchitect();
-    expect(orch).toBeTruthy();
-    expect(arch).toBeTruthy();
-    expect(orch).not.toBe(arch);
-  });
 });
