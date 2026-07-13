@@ -120,7 +120,7 @@ export interface LLMResponse {
 
 // ── Agent runtime state (per run) ───────────────────────────────────────────
 
-export type RunStatus = "running" | "complete" | "error" | "halted";
+export type RunStatus = "running" | "complete" | "error" | "halted" | "stopped";
 
 export interface AgentRunState {
   /** Unique id per run. */
@@ -189,6 +189,12 @@ export interface HandoffPacket {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** File attachment submitted via an interactive channel (e.g. @file mentions). */
+export interface FileAttachment {
+  path: string;
+  content: string;
+}
 
 export const EMPTY_USAGE: Usage = {
   promptTokens: 0,

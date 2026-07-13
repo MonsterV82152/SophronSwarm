@@ -41,6 +41,8 @@ export interface ToolContext {
   state: import("../types.js").AgentRunState;
   /** Shared infrastructure — available to tools that need to spawn sub-agents. */
   services: SharedServices;
+  /** Optional abort signal for long-running or cancellable operations. */
+  signal?: AbortSignal;
 }
 
 export type ToolHandler = (ctx: ToolContext) => Promise<string> | string;

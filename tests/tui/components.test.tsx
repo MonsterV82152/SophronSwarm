@@ -24,6 +24,8 @@ import {
   CostTab,
 } from "../../src/tui/components/ProjectTabs.js";
 import { AgentDetail } from "../../src/tui/components/AgentDetail.js";
+import { ChannelView } from "../../src/tui/components/ChannelView.js";
+import { agentEvents } from "../../src/agent/events.js";
 import { SelectList, clampIndex, type SelectListItem } from "../../src/tui/components/SelectList.js";
 import { chromeForView } from "../../src/tui/app.js";
 import { initialNavState, navReducer } from "../../src/tui/nav.js";
@@ -59,6 +61,20 @@ function makeOverview(overrides: Partial<OverviewModel> = {}): OverviewModel {
 
 function makeProject(overrides: Partial<ProjectEntry> = {}): ProjectEntry {
   return { name: "my-app", path: "/tmp/my-app", lastOpened: 0, ...overrides };
+}
+
+function makeAgentDefinition(overrides: Partial<import("../../src/types.js").AgentDefinition> = {}): import("../../src/types.js").AgentDefinition {
+  return {
+    name: "builder",
+    description: "builds things",
+    systemPrompt: "",
+    model: "ollama:test:1b",
+    provider: "ollama",
+    permissionMode: "default",
+    source: "project",
+    filePath: "/tmp/agents/builder.md",
+    ...overrides,
+  };
 }
 
 // ── SelectList (reused, regression coverage) ────────────────────────────────
@@ -358,6 +374,42 @@ describe("CostTab", () => {
   it("renders per-server breakdown when tools promoted", () => {
     const { lastFrame } = render(<CostTab model={makeModel({ mcpCost: { perServer: [{ server: "math", tokens: 84 }], total: 84, configuredServers: ["math"] } })} />);
     expect(lastFrame() ?? "").toContain("per-server");
+  });
+});
+
+// ── ChannelView ─────────────────────────────────────────────────────────────
+
+describe("ChannelView", () => {
+  it("renders the agent status line", () => {
+    const { lastFrame } = render(<ChannelView agentName="builder" agent={makeAgentDefinition()} workspaceDir="/tmp/proj" interactive={false} />);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("builder");
+    expect(frame).toContain("ollama:test:1b");
+    expect(frame).toContain("idle");
+  });
+
+  it("renders an observation-only hint for workers", () => {
+    const { lastFrame } = render(<ChannelView agentName="builder" agent={makeAgentDefinition()} workspaceDir="/tmp/proj" interactive={false} />);
+    expect(lastFrame() ?? "").toContain("observation only");
+  });
+
+  it("renders an interactive hint for orchestrators", () => {
+    const agent = makeAgentDefinition({ tools: ["delegate"] });
+    const { lastFrame } = render(<ChannelView agentName="builder" agent={agent} workspaceDir="/tmp/proj" interactive={true} />);
+    expect(lastFrame() ?? "").toContain("@file");
+  });
+
+  it("updates the thread when a live event arrives", () => {
+    const agent = makeAgentDefinition();
+    const { lastFrame } = render(<ChannelView agentName="builder" agent={agent} workspaceDir="/tmp/proj" interactive={false} />);
+    agentEvents.publish({
+      runId: "r-test",
+      agentName: "builder",
+      type: "run_start",
+      task: "build a thing",
+      ts: Date.now(),
+    });
+    expect(lastFrame() ?? "").toContain("Run started");
   });
 });
 

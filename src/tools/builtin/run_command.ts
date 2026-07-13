@@ -60,7 +60,7 @@ export const run_command: ToolSpec = {
     },
     required: ["command"],
   },
-  handler: async ({ args, agent, state }) => {
+  handler: async ({ args, agent, state, signal }) => {
     const command = requireString(args, "command");
 
     // ── 1. Permission mode gate: plan mode denies execution entirely ───────
@@ -92,6 +92,7 @@ export const run_command: ToolSpec = {
       workspace: state.workingDir,
       network: args["network"] === true,
       timeoutMs: typeof args["timeoutMs"] === "number" ? args["timeoutMs"] : undefined,
+      signal,
     });
 
     let formatted = formatExecResult(res);

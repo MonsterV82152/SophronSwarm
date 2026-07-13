@@ -38,6 +38,7 @@ import {
 import { Banner } from "./components/Banner.js";
 import { TabBar } from "./components/TabBar.js";
 import { InputBar } from "./components/InputBar.js";
+import { ChatInput } from "./components/ChatInput.js";
 import { OverviewTab } from "./components/OverviewTab.js";
 import { ProjectsTab } from "./components/ProjectsTab.js";
 import {
@@ -50,7 +51,9 @@ import {
   CostTab,
 } from "./components/ProjectTabs.js";
 import { AgentDetail } from "./components/AgentDetail.js";
+import { ChannelView } from "./components/ChannelView.js";
 import { OrchestratorChat, type ChatMessage } from "./components/OrchestratorChat.js";
+import { runManager } from "../agent/runManager.js";
 import { switchServices } from "../services/lifecycle.js";
 import { runAgent } from "../agent/loop.js";
 import { listProjects, registerProject, type ProjectEntry } from "../project/registry.js";
@@ -241,10 +244,10 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       if (sel) void switchProject(sel.path);
       return;
     }
-    // Agents tab → open agent detail.
+    // Agents tab → open agent channel.
     if (nav.surface === "project" && activeProjectTab(nav) === "agents") {
       const sel = model.agents[nav.agentsIndex];
-      if (sel) dispatch({ kind: "openAgentDetail", name: sel.name });
+      if (sel) dispatch({ kind: "openAgentChannel", name: sel.name });
       return;
     }
     // Runs tab → open run detail.
@@ -273,8 +276,27 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
       }
       // On Agent detail or channel, free text is a task for THAT agent.
       if (nav.agentDetail && !raw.startsWith("/")) {
-        pushBlock(`${nav.agentDetail}> ${raw}`, "yellow");
-        pushBlock(`(task queued — run via: sophron run ${nav.agentDetail} "${raw.slice(0, 60)}")`, "gray");
+        const agent = registry.get(nav.agentDetail);
+        if (!agent) {
+          pushBlock(`Unknown agent '${nav.agentDetail}'.`, "red");
+          return;
+        }
+        if (nav.detail === "agentChannel" && agent.tools?.includes("delegate")) {
+          // Interactive orchestrator channel: start a run directly.
+          const { runId } = runManager.start({
+            agent,
+            task: raw,
+            workingDir: workspaceDir,
+            llm: services.llm,
+            dispatcher: services.dispatcher,
+            checkpointer: services.checkpointer,
+            services,
+          });
+          pushBlock(`Started run ${runId.slice(0, 8)} for ${agent.name}`, "green");
+        } else {
+          pushBlock(`${nav.agentDetail}> ${raw}`, "yellow");
+          pushBlock(`(task queued — run via: sophron run ${nav.agentDetail} "${raw.slice(0, 60)}")`, "gray");
+        }
         return;
       }
       const cmd = parseSlashCommand(raw);
@@ -340,6 +362,16 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         case "rewind":
           pushBlock(`(rewind to ${cmd.runId} — checkpointer restore pending)`, "gray");
           break;
+        case "stop": {
+          const active = nav.agentDetail ? runManager.isRunning(nav.agentDetail) : undefined;
+          if (active) {
+            runManager.stop(active.runId);
+            pushBlock(`Stopped run ${active.runId.slice(0, 8)} for ${active.agentName}`, "yellow");
+          } else {
+            pushBlock("No active run to stop.", "gray");
+          }
+          break;
+        }
         case "clear":
           setBlocks([]);
           // On the Orchestrator tab, /clear also resets the chat thread.
@@ -390,15 +422,33 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           break;
       }
     },
-    [nav.surface, nav.agentDetail, nav.homeTabIndex, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning],
+    [nav.surface, nav.agentDetail, nav.detail, nav.runDetail, nav.homeTabIndex, nav.projectTabIndex, registry, services, approvals, pushBlock, exit, handleOrchestratorMessage, orchestratorRunning],
   );
 
   // ── Keyboard input → nav actions ──
+  const interactiveChannel =
+    nav.detail === "agentChannel" &&
+    nav.agentDetail != null &&
+    registry.get(nav.agentDetail)?.tools?.includes("delegate") === true;
+
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
+      // In an agent channel, Ctrl+C stops the active run first.
+      if (nav.detail === "agentChannel" && nav.agentDetail) {
+        const active = runManager.isRunning(nav.agentDetail);
+        if (active) {
+          runManager.stop(active.runId);
+          pushBlock(`Stopped run ${active.runId.slice(0, 8)} for ${active.agentName}`, "yellow");
+          return;
+        }
+      }
       exit();
       return;
     }
+
+    // In an interactive channel, ChatInput owns all keys except Ctrl+C.
+    if (interactiveChannel) return;
+
     if (switching) return;
 
     // ── Input bar focus ──
@@ -511,6 +561,8 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
           runDetail={runDetail}
           memoryContent={memoryContent}
           memoryLabel={memoryLabel}
+          workspaceDir={workspaceDir}
+          registry={registry}
         />
       )}
     </Box>
@@ -526,7 +578,40 @@ export function App({ services: initialServices, workspaceDir: initialDir, appro
         <Banner version="V3" compact={context} />
         {content}
         <Box marginTop={1}>
-          <InputBar value={nav.input} focused={nav.focus === "input"} disabled={switching} prompt={nav.agentDetail ? `${nav.agentDetail}>` : ">"} />
+          {interactiveChannel && nav.agentDetail ? (
+            <ChatInput
+              workspaceDir={workspaceDir}
+              onSubmit={({ text, attachments }) => {
+                const agent = registry.get(nav.agentDetail!);
+                if (!agent) return;
+                const { runId } = runManager.start({
+                  agent,
+                  task: text,
+                  workingDir: workspaceDir,
+                  llm: services.llm,
+                  dispatcher: services.dispatcher,
+                  checkpointer: services.checkpointer,
+                  services,
+                  attachments,
+                });
+                pushBlock(`Started run ${runId.slice(0, 8)} for ${agent.name}`, "green");
+              }}
+              onCancel={() => {
+                setNav((p) => ({ ...p, focus: "content" }));
+                dispatch({ kind: "exitUp" });
+              }}
+              onStop={() => {
+                if (!nav.agentDetail) return;
+                const active = runManager.isRunning(nav.agentDetail);
+                if (active) {
+                  runManager.stop(active.runId);
+                  pushBlock(`Stopped run ${active.runId.slice(0, 8)} for ${active.agentName}`, "yellow");
+                }
+              }}
+            />
+          ) : (
+            <InputBar value={nav.input} focused={nav.focus === "input"} disabled={switching} prompt={nav.agentDetail ? `${nav.agentDetail}>` : ">"} />
+          )}
         </Box>
       </Box>
     );
@@ -638,14 +723,23 @@ function ProjectContent({
   runDetail,
   memoryContent,
   memoryLabel,
+  workspaceDir,
+  registry,
 }: {
   nav: NavState;
   model: ReturnType<typeof buildDashboard>;
   runDetail: RunDetail | null;
   memoryContent: string;
   memoryLabel: string;
+  workspaceDir: string;
+  registry: AgentRegistry;
 }) {
   if (nav.agentDetail) {
+    const agent = registry.get(nav.agentDetail);
+    if (nav.detail === "agentChannel" && agent) {
+      const interactive = agent.tools?.includes("delegate") ?? false;
+      return <ChannelView agentName={agent.name} agent={agent} workspaceDir={workspaceDir} interactive={interactive} />;
+    }
     return <AgentDetail model={model} agentName={nav.agentDetail} />;
   }
   if (nav.runDetail) {

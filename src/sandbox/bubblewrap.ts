@@ -35,6 +35,7 @@ export class BubblewrapBackend implements ExecutionBackend {
       // don't always cover).
       env: { PATH: process.env["PATH"] ?? "/usr/local/bin:/usr/bin:/bin", ...opts.env },
       timeoutMs,
+      signal: opts.signal,
     });
     const durationMs = Date.now() - start;
 

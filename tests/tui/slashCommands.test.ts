@@ -46,10 +46,12 @@ describe("parseSlashCommand — simple commands", () => {
     expect(parseSlashCommand("/cost")).toEqual({ kind: "cost" });
   });
 
-  it("parses /clear and /quit", () => {
+  it("parses /clear, /quit, and /stop", () => {
     expect(parseSlashCommand("/clear")).toEqual({ kind: "clear" });
     expect(parseSlashCommand("/quit")).toEqual({ kind: "quit" });
     expect(parseSlashCommand("/exit")).toEqual({ kind: "quit" });
+    expect(parseSlashCommand("/stop")).toEqual({ kind: "stop" });
+    expect(parseSlashCommand("/s")).toEqual({ kind: "stop" });
   });
 });
 

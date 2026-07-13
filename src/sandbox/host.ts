@@ -30,6 +30,7 @@ export class HostBackend implements ExecutionBackend {
       cwd: opts.workspace,
       env: opts.env,
       timeoutMs,
+      signal: opts.signal,
     });
     return {
       exitCode: res.exitCode,

@@ -22,11 +22,12 @@ import { ToolDispatcher } from "../tools/dispatcher.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { Checkpointer } from "../state/checkpointer.js";
 import { recorder } from "../state/recorder.js";
+import { agentEvents } from "./events.js";
 import type { SharedServices } from "../tools/schema.js";
 import { promoteTool, recordPromotionCosts } from "../mcp/promotion.js";
 import {
   addUsage, EMPTY_USAGE,
-  type AgentDefinition, type AgentRunState, type DelegationContext, type LLMMessage,
+  type AgentDefinition, type AgentRunState, type DelegationContext, type FileAttachment, type LLMMessage,
 } from "../types.js";
 
 export const DEFAULT_MAX_TURNS = 32;
@@ -44,6 +45,13 @@ export interface RunOptions {
   delegationCtx?: DelegationContext;
   /** Override the default max-turns cap. */
   maxTurns?: number;
+  /** Optional abort signal. The loop checks this between turns and aborts
+   *  long-running tool commands. When aborted, the run ends with status "stopped". */
+  abortSignal?: AbortSignal;
+  /** Optional file attachments to inject into the first user message. */
+  attachments?: FileAttachment[];
+  /** Optional explicit run id. When omitted a fresh UUID is generated. */
+  runId?: string;
 }
 
 function initRunState(
@@ -51,11 +59,11 @@ function initRunState(
   task: string,
   workingDir: string,
   delegationCtx?: DelegationContext,
+  runId?: string,
 ): AgentRunState {
-  const runId = randomUUID();
   const threadId = randomUUID();
   return {
-    runId,
+    runId: runId ?? randomUUID(),
     threadId,
     agentName: agent.name,
     task,
@@ -98,12 +106,21 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const agentMemory = allowPerAgent ? services.agentMemoryStore.readForInjection(agent.name) : "";
 
   const promptBuilder = new PromptBuilder();
-  const state = initRunState(agent, task, workingDir, opts.delegationCtx);
+  const state = initRunState(agent, task, workingDir, opts.delegationCtx, opts.runId);
   const messages: LLMMessage[] = promptBuilder.build(agent, task, {
     workingDir,
     sharedMemory: sharedMemory.size > 0 ? sharedMemory : undefined,
     agentMemory: agentMemory || undefined,
   });
+  if (opts.attachments && opts.attachments.length > 0) {
+    const firstUser = messages.find((m) => m.role === "user");
+    if (firstUser && typeof firstUser.content === "string") {
+      const blocks = opts.attachments
+        .map((a) => `<file path="${a.path}">\n${a.content}\n</file>`)
+        .join("\n\n");
+      firstUser.content = `${firstUser.content}\n\nATTACHMENTS:\n${blocks}`;
+    }
+  }
   state.messages = messages;
 
   // ── Phase 4: pre-promote tools from alwaysExpose servers ────────────────
@@ -113,12 +130,31 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
 
   recorder.openForRun(state.runId);
   recorder.recordRunStart(state);
+  agentEvents.publish({
+    runId: state.runId,
+    agentName: state.agentName,
+    type: "run_start",
+    task: state.task,
+    ts: Date.now(),
+  } as const);
   checkpointer.save(state);
   log.info({ agent: agent.name, runId: state.runId, model: agent.model, maxTurns }, "run start");
 
   try {
     for (state.turn = 0; state.turn < maxTurns; state.turn++) {
+      if (opts.abortSignal?.aborted) {
+        state.status = "stopped";
+        log.info({ agent: agent.name, runId: state.runId }, "run aborted by operator");
+        break;
+      }
       recorder.recordTurnStart(state);
+      agentEvents.publish({
+        runId: state.runId,
+        agentName: state.agentName,
+        type: "turn_start",
+        turn: state.turn,
+        ts: Date.now(),
+      } as const);
 
       // ── 1. Call the model (transient errors retried inside the client) ────
       const tools = toolDefsFor(dispatcher.registry, agent, state);
@@ -135,6 +171,18 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         toolCallCount: response.toolCalls.length,
         ts: Date.now(),
       });
+      agentEvents.publish({
+        runId: state.runId,
+        agentName: state.agentName,
+        type: "llm_response",
+        turn: state.turn,
+        model: response.model,
+        usage: response.usage,
+        finishReason: response.finishReason,
+        contentPreview: (response.content ?? "").slice(0, 500),
+        toolCallCount: response.toolCalls.length,
+        ts: Date.now(),
+      } as const);
       log.info(
         { turn: state.turn, finish: response.finishReason, calls: response.toolCalls.length, usage: response.usage },
         "llm turn",
@@ -147,6 +195,14 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         state.messages = messages;
         state.status = "complete";
         recorder.recordTurnEnd(state);
+        agentEvents.publish({
+          runId: state.runId,
+          agentName: state.agentName,
+          type: "turn_end",
+          turn: state.turn,
+          cumulativeUsage: state.tokenUsage,
+          ts: Date.now(),
+        } as const);
         checkpointer.save(state);
         break;
       }
@@ -160,7 +216,17 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
 
       for (const call of response.toolCalls) {
         recorder.recordToolCallStart(call, state.runId, state.turn);
-        const result = await dispatcher.dispatch(call, agent, state, services);
+        agentEvents.publish({
+          runId: state.runId,
+          agentName: state.agentName,
+          type: "tool_call_start",
+          turn: state.turn,
+          toolCallId: call.id,
+          tool: call.function.name,
+          args: call.function.arguments,
+          ts: Date.now(),
+        } as const);
+        const result = await dispatcher.dispatch(call, agent, state, services, opts.abortSignal);
         messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -168,10 +234,28 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           name: call.function.name,
         });
         recorder.recordToolCallResult(call, state.runId, state.turn, result.content, result.isError === true);
+        agentEvents.publish({
+          runId: state.runId,
+          agentName: state.agentName,
+          type: "tool_call_result",
+          turn: state.turn,
+          toolCallId: call.id,
+          isError: result.isError === true,
+          resultPreview: result.content.slice(0, 500),
+          ts: Date.now(),
+        } as const);
       }
 
       state.messages = messages;
       recorder.recordTurnEnd(state);
+      agentEvents.publish({
+        runId: state.runId,
+        agentName: state.agentName,
+        type: "turn_end",
+        turn: state.turn,
+        cumulativeUsage: state.tokenUsage,
+        ts: Date.now(),
+      } as const);
       checkpointer.save(state);
     }
 
@@ -183,10 +267,25 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     state.status = "error";
     state.error = (e as Error)?.message ?? String(e);
     recorder.record({ type: "run_error", runId: state.runId, error: state.error, ts: Date.now() });
+    agentEvents.publish({
+      runId: state.runId,
+      agentName: state.agentName,
+      type: "run_error",
+      error: state.error,
+      ts: Date.now(),
+    } as const);
     log.error({ err: e, runId: state.runId }, "run ended in error");
   } finally {
     state.endedAt = Date.now();
     recorder.recordRunEnd(state);
+    agentEvents.publish({
+      runId: state.runId,
+      agentName: state.agentName,
+      type: "run_end",
+      status: state.status,
+      totalUsage: state.tokenUsage,
+      ts: Date.now(),
+    } as const);
     checkpointer.save(state);
     // Restore the parent run's recorder context (no-op when this is the top-level run).
     recorder.closeRun();

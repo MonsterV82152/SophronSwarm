@@ -23,6 +23,7 @@ export type SlashCommand =
   | { kind: "approve"; id: string; decision: "yes" | "no" }
   | { kind: "rewind"; runId: string }
   | { kind: "clear" }
+  | { kind: "stop" }
   | { kind: "quit" }
   | { kind: "unknown"; raw: string; reason: string }
   | { kind: "task"; text: string }; // free-text (not a slash command)
@@ -104,6 +105,9 @@ export function parseSlashCommand(input: string): SlashCommand {
     }
     case "/clear":
       return { kind: "clear" };
+    case "/stop":
+    case "/s":
+      return { kind: "stop" };
     case "/quit":
     case "/exit":
       return { kind: "quit" };

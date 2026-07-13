@@ -20,6 +20,8 @@
  */
 import React from "react";
 import { Box, Text } from "ink";
+import { MessageThread } from "./MessageThread.js";
+import type { ActivityItem } from "./MessageThread.js";
 
 export interface ChatMessage {
   id: number;
@@ -35,6 +37,12 @@ export interface OrchestratorChatProps {
 }
 
 export function OrchestratorChat({ messages, running, installed }: OrchestratorChatProps) {
+  const items: ActivityItem[] = messages.map((m) =>
+    m.role === "user"
+      ? { id: m.id, kind: "user", text: m.text }
+      : { id: m.id, kind: "agent", agentName: "🧭", text: m.text }
+  );
+
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
@@ -59,18 +67,10 @@ export function OrchestratorChat({ messages, running, installed }: OrchestratorC
       ) : null}
 
       {/* ── Message thread ── */}
-      <Box flexDirection="column" marginBottom={1}>
-        {messages.length === 0 && installed ? (
-          <Box marginBottom={1}>
-            <Text dimColor>
-              {"  No messages yet. Describe a project you want to build, or ask what exists."}
-            </Text>
-          </Box>
-        ) : null}
-        {messages.map((m) => (
-          <MessageRow key={m.id} message={m} />
-        ))}
-      </Box>
+      <MessageThread
+        items={items}
+        emptyHint={installed ? "No messages yet. Describe a project you want to build, or ask what exists." : undefined}
+      />
 
       {/* ── Thinking indicator ── */}
       {running ? (
@@ -90,23 +90,6 @@ export function OrchestratorChat({ messages, running, installed }: OrchestratorC
             : "Install the orchestrator, then chat below"}
         </Text>
       </Box>
-    </Box>
-  );
-}
-
-function MessageRow({ message }: { message: ChatMessage }) {
-  const isUser = message.role === "user";
-  const prefix = isUser ? "  you › " : "  🧭 › ";
-  const color: "green" | "cyan" = isUser ? "green" : "cyan";
-  // Render multi-line text as separate lines, each prefixed.
-  const lines = message.text.split("\n");
-  return (
-    <Box flexDirection="column">
-      {lines.map((line, i) => (
-        <Text key={i} color={i === 0 ? color : undefined}>
-          {i === 0 ? `${prefix}${line}` : `      ${line}`}
-        </Text>
-      ))}
     </Box>
   );
 }

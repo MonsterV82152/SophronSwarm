@@ -97,10 +97,12 @@ describe("helpForView — per-view sections", () => {
     expect(text).toContain("Esc");
   });
 
-  it("project:agentChannel shows /model + Esc", () => {
+  it("project:agentChannel shows /stop + /model + @file + Esc", () => {
     const text = helpForView("project:agentChannel");
     expect(text).toContain("Agent channel");
+    expect(text).toContain("/stop");
     expect(text).toContain("/model");
+    expect(text).toContain("@file");
     expect(text).toContain("Esc");
   });
 

@@ -4,9 +4,8 @@
 > with the proposed enhancements in [`IDEAS.md`](./IDEAS.md), and the
 > **two-tier hierarchy** vision (global orchestrator above all projects).
 >
-> **Baseline (verified 2026-07-13):** 647/647 tests passing, clean `tsc`.
-> Phases 0–6 complete. M1–M8 + M10 complete. **V3.1.0-M1** (provider + model
-> refactor — tiers removed, concrete model+provider required) complete.
+> **Baseline (verified 2026-07-13):** 689/689 tests passing, clean `tsc`.
+> Phases 0–6 complete. M1–M8 + M10 complete. **V3.1.0-M1–M4** complete.
 > M9 (web UI) deferred. See [`V3.1.0_PLAN.md`](./V3.1.0_PLAN.md) for the
 > V3.1.0 milestone plan.
 >
@@ -75,7 +74,7 @@ SophronSwarm (global)                          ← operator's home
 | **V3.1.0-M1 — Provider + Model Refactor** | ✅ Complete | Removed tiers/defaults/`inherit`/`defaultModel`; `model:`+`provider:` required; provider `description` field; `resolveModel(model, provider)` single chokepoint. 647 tests. |
 | **V3.1.0-M2 — G_O Consolidation** | ✅ Complete | Remove architect; G_O designs rosters inline via `propose_roster`. |
 | **V3.1.0-M3 — Chrome + `/model`** | ✅ Complete | Bare chrome for chat views; `/model` slash command persists to agent frontmatter. |
-| **V3.1.0-M4 — Agent Channels** | 🔜 | Live stream + interrupt + interactive chat per agent. |
+| **V3.1.0-M4 — Agent Channels** | ✅ Complete | Live stream + interrupt + interactive chat per agent. `AgentEventBus`, `RunManager`, `ChannelView`, `ChatInput`, `@file` attachments (≤1000 lines). 689 tests. |
 | **V3.1.0-M5 — CLI + Wizard + Polish** | 🔜 | Provider commands consolidated; `sophron init` provider wizard. |
 
 ---

@@ -26,6 +26,8 @@ export interface ExecOptions {
   timeoutMs?: number;
   /** Extra environment variables merged into the child's env. */
   env?: Record<string, string>;
+  /** Optional external abort signal for cancellation. */
+  signal?: AbortSignal;
 }
 
 export interface ExecResult {

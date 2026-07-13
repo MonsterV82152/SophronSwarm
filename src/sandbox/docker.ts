@@ -83,6 +83,7 @@ export class DockerBackend implements ExecutionBackend {
       cwd: opts.workspace,
       env: opts.env,
       timeoutMs,
+      signal: opts.signal,
     });
   }
 

@@ -92,9 +92,12 @@ const VIEW_HELP: Partial<Record<HelpView, string>> = {
   Esc                Back to the Agents list`,
 
   "project:agentChannel": `── Agent channel ──
-Live chat with this agent. Type a task below to send it.
-/model <model-id>  Change the model this agent uses (persisted to its .md file)
-Esc                Back to the Agents list`,
+  Live chat with this agent (or observation-only for worker agents).
+  Type a task below to send it to an interactive agent.
+  /stop              Stop the currently running agent (or Ctrl+C)
+  /model <model-id>  Change the model this agent uses (persisted to its .md file)
+  @file              Attach a file (interactive channels only)
+  Esc                Back to the Agents list`,
 
   "project:runs": `── Runs ──
   ↑/↓ to select a run · Enter to expand its event log.

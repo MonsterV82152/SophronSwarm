@@ -78,6 +78,7 @@ export class ToolDispatcher {
     agent: AgentDefinition,
     state: AgentRunState,
     services?: SharedServices,
+    signal?: AbortSignal,
   ): Promise<ToolResult> {
     const name = call.function.name;
 
@@ -125,7 +126,7 @@ export class ToolDispatcher {
 
     // ── Execute (tool errors are surfaced to the model, never thrown) ──────
     try {
-      const out = await spec.handler({ args, agent, state, services: services! });
+      const out = await spec.handler({ args, agent, state, services: services!, signal });
       const content = typeof out === "string" ? out : JSON.stringify(out);
 
       // ── Purify successful output before it enters message history ────────

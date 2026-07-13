@@ -50,7 +50,7 @@ export const delegate: ToolSpec = {
     },
     required: ["agent", "task"],
   },
-  handler: async ({ args, agent: callerAgent, state, services }) => {
+  handler: async ({ args, agent: callerAgent, state, services, signal }) => {
     const targetName = requireString(args, "agent");
     const task = requireString(args, "task");
 
@@ -92,6 +92,7 @@ export const delegate: ToolSpec = {
       checkpointer: services.checkpointer,
       services,
       delegationCtx: childCtx,
+      abortSignal: signal,
     });
 
     // ── 5. Build handoff packet — the ONLY thing entering parent context ──
