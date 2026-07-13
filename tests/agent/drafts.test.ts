@@ -128,7 +128,8 @@ describe("propose_agent tool", () => {
         description: "Builds features",
         systemPrompt: "You build features.",
         tools: ["write_file", "run_command"],
-        model: "inherit",
+        model: "qwen3.5:9b",
+        provider: "ollama",
         permissionMode: "auto",
       },
       agent: {} as AgentDefinition,
@@ -171,7 +172,7 @@ describe("propose_agent tool", () => {
     store.writeDraft("a", "x");
     store.approve("a"); // closes bootstrap
     const out = propose_agent.handler({
-      args: { name: "late", description: "x", systemPrompt: "y" },
+      args: { name: "late", description: "x", systemPrompt: "y", model: "qwen3.5:9b", provider: "ollama" },
       agent: {} as AgentDefinition,
       state: makeState(dir),
       services: stubServices,

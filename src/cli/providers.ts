@@ -108,6 +108,12 @@ export async function handleProvidersAdd(opts: AddProviderOpts): Promise<void> {
     kind = await promptSelect("Endpoint type (kind)", KINDS, { default: "ollama", labels: kindLabels });
   }
 
+  if (nonInteractive && kind === "openai-compat" && !opts.baseUrl) {
+    console.error(chalk.red("--base-url is required for kind 'openai-compat'."));
+    process.exitCode = 1;
+    return;
+  }
+
   const baseURL =
     opts.baseUrl ??
     (nonInteractive

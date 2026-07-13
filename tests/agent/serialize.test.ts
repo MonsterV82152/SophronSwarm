@@ -7,39 +7,41 @@ describe("serializeDraft", () => {
       name: "builder",
       description: "Builds things",
       systemPrompt: "You build things.",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
     });
     expect(out.startsWith("---\n")).toBe(true);
     expect(out).toContain("name: builder");
     expect(out).toContain("description: Builds things");
-    expect(out).toContain("model: inherit"); // default when no model given
+    expect(out).toContain('model: "qwen3.5:9b"');
+    expect(out).toContain("provider: ollama");
     expect(out).toContain("permissionMode: default");
     expect(out).toContain("\n---\n"); // closing frontmatter fence
     expect(out).toContain("You build things.");
   });
 
-  it("uses the provided model when given", () => {
-    const out = serializeDraft({
-      name: "x",
-      description: "d",
-      systemPrompt: "s",
-      model: "qwen3.5:9b",
-      permissionMode: "default",
-    });
-    expect(out).toContain('model: "qwen3.5:9b"');
-    expect(out).not.toContain("model: inherit");
+  it("rejects a missing model", () => {
+    expect(() =>
+      serializeDraft({
+        name: "x",
+        description: "d",
+        systemPrompt: "s",
+        permissionMode: "default",
+      }),
+    ).toThrow(/concrete model id/);
   });
 
-  it("serializes provider when given", () => {
-    const out = serializeDraft({
-      name: "x",
-      description: "d",
-      systemPrompt: "s",
-      model: "qwen3.5:9b",
-      provider: "ollama",
-      permissionMode: "default",
-    });
-    expect(out).toContain("provider: ollama");
+  it("rejects a missing provider", () => {
+    expect(() =>
+      serializeDraft({
+        name: "x",
+        description: "d",
+        systemPrompt: "s",
+        model: "qwen3.5:9b",
+        permissionMode: "default",
+      }),
+    ).toThrow(/configured provider name/);
   });
 
   it("omits optional fields when not provided", () => {
@@ -47,6 +49,8 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
     });
     expect(out).not.toContain("tools:");
@@ -60,6 +64,8 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
       tools: ["write_file", "run_command"],
       delegateAllowlist: ["builder", "tester"],
@@ -75,6 +81,8 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
       maxTurns: 25,
     });
@@ -86,6 +94,8 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "s",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
       tools: [],
     });
@@ -97,6 +107,8 @@ describe("serializeDraft", () => {
       name: "x",
       description: "d",
       systemPrompt: "  body with spaces  \n\n",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
     });
     expect(out).not.toMatch(/\n\n\n$/); // no triple trailing newline
@@ -108,6 +120,8 @@ describe("serializeDraft", () => {
       name: "x",
       description: "does a: b and # c",
       systemPrompt: "s",
+      model: "qwen3.5:9b",
+      provider: "ollama",
       permissionMode: "default",
     });
     // The colon/hash in the description forces quoting.

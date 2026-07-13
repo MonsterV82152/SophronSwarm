@@ -31,9 +31,14 @@ export function serializeDraft(f: DraftFields): string {
     fm.push("tools:");
     for (const t of f.tools) fm.push(`  - ${yamlString(String(t))}`);
   }
-  if (typeof f.model === "string") fm.push(`model: ${yamlString(f.model)}`);
-  else fm.push("model: inherit");
-  if (typeof f.provider === "string") fm.push(`provider: ${yamlString(f.provider)}`);
+  if (typeof f.model !== "string" || !f.model.trim()) {
+    throw new Error("Draft agent must have a concrete model id (V3.1.0 no longer supports 'inherit').");
+  }
+  fm.push(`model: ${yamlString(f.model)}`);
+  if (typeof f.provider !== "string" || !f.provider.trim()) {
+    throw new Error("Draft agent must have a configured provider name.");
+  }
+  fm.push(`provider: ${yamlString(f.provider)}`);
   fm.push(`permissionMode: ${yamlString(f.permissionMode)}`);
   if (Array.isArray(f.delegateAllowlist) && f.delegateAllowlist.length > 0) {
     fm.push("delegateAllowlist:");

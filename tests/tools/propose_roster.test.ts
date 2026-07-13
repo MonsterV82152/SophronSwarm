@@ -33,6 +33,8 @@ const baseAgent = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
   description: `${name} description`,
   systemPrompt: `You are ${name}.`,
+  model: "qwen3.5:9b",
+  provider: "ollama",
   ...extra,
 });
 
@@ -49,8 +51,8 @@ describe("propose_roster tool", () => {
       args: {
         summary: "core team",
         agents: [
-          baseAgent("builder", { tools: ["write_file"], model: "inherit", permissionMode: "auto" }),
-          baseAgent("tester", { tools: ["run_command"], model: "mid" }),
+          baseAgent("builder", { tools: ["write_file"], permissionMode: "auto" }),
+          baseAgent("tester", { tools: ["run_command"] }),
         ],
       },
       agent: {} as AgentDefinition,
