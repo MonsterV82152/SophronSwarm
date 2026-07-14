@@ -55,4 +55,36 @@ describe("agentEvents", () => {
     agentEvents.publish({ runId: "r1", agentName: "a", type: "run_start", ts: 1 });
     expect(events).toHaveLength(0);
   });
+
+  it("recentForAgent returns buffered events for catch-up", () => {
+    agentEvents.clearRecent();
+    agentEvents.publish({ runId: "r1", agentName: "alpha", type: "run_start", ts: 1 });
+    agentEvents.publish({ runId: "r1", agentName: "alpha", type: "turn_start", turn: 0, ts: 2 });
+    agentEvents.publish({ runId: "r2", agentName: "beta", type: "run_start", ts: 3 });
+
+    const alphaEvents = agentEvents.recentForAgent("alpha");
+    expect(alphaEvents).toHaveLength(2);
+    expect(alphaEvents.every((e) => e.agentName === "alpha")).toBe(true);
+
+    const betaEvents = agentEvents.recentForAgent("beta");
+    expect(betaEvents).toHaveLength(1);
+  });
+
+  it("recentForAgent respects the limit", () => {
+    agentEvents.clearRecent();
+    for (let i = 0; i < 10; i++) {
+      agentEvents.publish({ runId: "r1", agentName: "alpha", type: "turn_start", turn: i, ts: i });
+    }
+    const limited = agentEvents.recentForAgent("alpha", 3);
+    expect(limited).toHaveLength(3);
+    // Should be the LAST 3 (most recent).
+    expect(limited[2]!.turn).toBe(9);
+  });
+
+  it("clearRecent empties the buffer", () => {
+    agentEvents.publish({ runId: "r1", agentName: "a", type: "run_start", ts: 1 });
+    expect(agentEvents.recentForAgent("a")).toHaveLength(1);
+    agentEvents.clearRecent();
+    expect(agentEvents.recentForAgent("a")).toHaveLength(0);
+  });
 });

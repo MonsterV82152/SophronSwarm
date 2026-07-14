@@ -42,6 +42,24 @@ export function ChannelView({ agentName, agent, interactive }: ChannelViewProps)
   // useLayoutEffect is used so tests (and the TUI) see updates synchronously
   // right after the component mounts.
   useLayoutEffect(() => {
+    // Catch-up: seed with recent buffered events so the operator sees activity
+    // that happened before entering the channel.
+    const buffered = agentEvents.recentForAgent(agentName);
+    if (buffered.length > 0) {
+      const seed = buffered.map((e, i) => eventToItem(e, i));
+      setItems(seed);
+      // Derive status/turn from the last buffered event.
+      const last = buffered[buffered.length - 1]!;
+      if (last.type === "run_end" || last.type === "run_error") {
+        setStatus(last.type === "run_error" ? "error" : (last.status ?? "complete"));
+      } else {
+        setStatus("running");
+      }
+      if (last.turn !== undefined) setTurn(last.turn);
+      const startEvent = buffered.find((e) => e.type === "run_start");
+      if (startEvent?.runId) setRunId(startEvent.runId);
+    }
+
     const off = agentEvents.onAll((event) => {
       if (event.agentName !== agentName) return;
       if (event.type === "run_start" && event.runId) {

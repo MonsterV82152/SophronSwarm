@@ -7,7 +7,7 @@
  */
 import chalk from "chalk";
 import { addProviderInstance, type ProviderKind } from "../llm/providers.js";
-import { prompt, promptSelect, promptConfirm, promptSecret } from "../util/prompts.js";
+import { prompt, promptSelect, promptSecret } from "../util/prompts.js";
 
 const KINDS = ["openrouter", "ollama", "zai", "openai-compat"] as const;
 
@@ -73,7 +73,6 @@ export async function runProviderWizard(): Promise<WizardResult> {
 
   const description =
     (await prompt("Description (optional — what this provider is / what it's good for)")) || undefined;
-  const markDefault = await promptConfirm("Mark as the default instance for this kind?", false);
 
   const stored = addProviderInstance(
     {
@@ -82,7 +81,6 @@ export async function runProviderWizard(): Promise<WizardResult> {
       baseURL: baseURL || undefined,
       apiKey,
       description,
-      default: markDefault,
     },
     { replace: false },
   );

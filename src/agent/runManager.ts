@@ -24,6 +24,8 @@ export interface ActiveRun {
 interface StartOptions extends Omit<RunOptions, "abortSignal"> {
   agent: AgentDefinition;
   parentId?: string;
+  /** Parent's abort signal — when it fires, this run's controller also aborts. */
+  parentSignal?: AbortSignal;
 }
 
 class RunManager {
@@ -42,6 +44,20 @@ class RunManager {
       startedAt,
       parentId: opts.parentId,
     });
+
+    // If a parent signal is provided, wire it so aborting the parent also
+    // aborts this child immediately (in addition to the parentId cascade).
+    if (opts.parentSignal) {
+      if (opts.parentSignal.aborted) {
+        abortController.abort();
+      } else {
+        opts.parentSignal.addEventListener(
+          "abort",
+          () => abortController.abort(),
+          { once: true },
+        );
+      }
+    }
 
     const runPromise = runAgent({
       ...opts,

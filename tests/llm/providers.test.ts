@@ -402,10 +402,11 @@ describe("addProviderInstance", () => {
     expect(got.baseURL).toBe("http://localhost:11434/v1");
   });
 
-  it("persists the default flag", () => {
-    addProviderInstance({ name: "primary", kind: "openrouter", apiKey: "k", default: true });
-    const cfg = readConfigFile() as { providers: { name: string; default?: boolean }[] };
-    expect(cfg.providers[0]!.default).toBe(true);
+  it("ignores a default flag if passed (vestigial field)", () => {
+    // V3.1.0 removed prefix shortcuts; the `default` field is no longer accepted.
+    addProviderInstance({ name: "primary", kind: "openrouter", apiKey: "k" } as never);
+    const cfg = readConfigFile() as { providers: { name: string }[] };
+    expect(cfg.providers[0]!.name).toBe("primary");
   });
 
   it("resets the in-process cache so listProviders reflects the write", () => {
@@ -550,14 +551,6 @@ describe("updateProviderInstance", () => {
     expect(readConfig().providers[0]!.description).toBeUndefined();
   });
 
-  it("sets the default flag", () => {
-    addProviderInstance({ name: "flag", kind: "ollama" });
-    updateProviderInstance("flag", { default: true });
-    expect(readConfig().providers[0]!.default).toBe(true);
-    updateProviderInstance("flag", { default: false });
-    expect(readConfig().providers[0]!.default).toBeUndefined();
-  });
-
   it("throws for a non-existent provider (no built-in singletons in V3.1.0)", () => {
     expect(() => updateProviderInstance("ghost", { apiKey: "x" })).toThrow(/No provider instance/);
   });
@@ -571,10 +564,9 @@ describe("updateProviderInstance", () => {
 
   it("updates multiple fields in one call", () => {
     addProviderInstance({ name: "multi", kind: "openrouter", baseURL: "old-url", apiKey: "old-key", description: "old desc" });
-    const stored = updateProviderInstance("multi", { baseURL: "new-url", apiKey: "new-key", description: "new desc", default: true });
+    const stored = updateProviderInstance("multi", { baseURL: "new-url", apiKey: "new-key", description: "new desc" });
     expect(stored.baseURL).toBe("new-url");
     expect(stored.apiKey).toBe("new-key");
     expect(stored.description).toBe("new desc");
-    expect(stored.default).toBe(true);
   });
 });

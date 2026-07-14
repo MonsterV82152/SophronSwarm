@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { wordAt, resolveAttachments } from "../../src/tui/components/ChatInput.js";
+import { wordAt, resolveAttachments, refreshMenu } from "../../src/tui/components/ChatInput.js";
 
 describe("ChatInput — wordAt", () => {
   it("finds the word at the cursor", () => {
@@ -74,5 +74,74 @@ describe("ChatInput — resolveAttachments", () => {
     const attachments = resolveAttachments("@long.txt", dir);
     expect(attachments).toHaveLength(1);
     expect(attachments[0]!.content).toContain("[…file truncated at 1000 lines…]");
+  });
+});
+
+describe("ChatInput — resolveAttachments quoted paths", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "sophron-chatinput-quoted-"));
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src/app.ts"), "export const x = 1;");
+    writeFileSync(join(dir, "file with spaces.ts"), "spaced");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reads quoted paths with spaces", () => {
+    const attachments = resolveAttachments('check @"file with spaces.ts"', dir);
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!.path).toBe("file with spaces.ts");
+    expect(attachments[0]!.content).toContain("spaced");
+  });
+
+  it("mixes quoted and bare mentions", () => {
+    const attachments = resolveAttachments('look at @"file with spaces.ts" and @src/app.ts', dir);
+    expect(attachments).toHaveLength(2);
+    expect(attachments.map((a) => a.path)).toContain("file with spaces.ts");
+    expect(attachments.map((a) => a.path)).toContain("src/app.ts");
+  });
+});
+
+describe("ChatInput — refreshMenu @file autocomplete", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "sophron-chatinput-menu-"));
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "node_modules"), { recursive: true });
+    writeFileSync(join(dir, "src/app.ts"), "x");
+    writeFileSync(join(dir, "readme.md"), "x");
+    writeFileSync(join(dir, "node_modules/should-not-show.ts"), "x");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns matching files for @ prefix", () => {
+    const r = refreshMenu("check @src/", 10, dir);
+    expect(r.trigger).toBe("@");
+    expect(r.items.some((f) => f.includes("src/app.ts"))).toBe(true);
+  });
+
+  it("does not include node_modules", () => {
+    const r = refreshMenu("@", 1, dir);
+    expect(r.items.some((f) => f.includes("node_modules"))).toBe(false);
+  });
+
+  it("returns slash commands for / prefix", () => {
+    const r = refreshMenu("/st", 3, dir);
+    expect(r.trigger).toBe("/");
+    expect(r.items).toContain("stop");
+  });
+
+  it("returns null trigger for plain text", () => {
+    const r = refreshMenu("hello", 5, dir);
+    expect(r.trigger).toBeNull();
+    expect(r.items).toHaveLength(0);
   });
 });

@@ -17,7 +17,7 @@ import {
   configPath,
   type ProviderKind,
 } from "../llm/providers.js";
-import { prompt, promptSelect, promptConfirm, promptSecret } from "../util/prompts.js";
+import { prompt, promptSelect, promptSecret } from "../util/prompts.js";
 
 /** Mask an API key for display: show only the last 4 chars (or ${ENV} refs verbatim). */
 function maskKey(key: string): string {
@@ -48,7 +48,6 @@ export interface AddProviderOpts {
   baseUrl?: string;
   apiKey?: string;
   description?: string;
-  default?: boolean;
   replace?: boolean;
 }
 
@@ -56,8 +55,6 @@ export interface EditProviderOpts {
   baseUrl?: string;
   apiKey?: string;
   description?: string;
-  default?: boolean;
-  noDefault?: boolean;
   clearKey?: boolean;
   clearDescription?: boolean;
 }
@@ -137,11 +134,9 @@ export async function handleProvidersAdd(opts: AddProviderOpts): Promise<void> {
     opts.description ??
     (nonInteractive ? undefined : (await prompt("Description (optional — what this provider is / what it's good for)")) || undefined);
 
-  const markDefault = opts.default ?? (nonInteractive ? false : await promptConfirm("Mark as the default instance for this kind?", false));
-
   try {
     const stored = addProviderInstance(
-      { name, kind, baseURL: baseURL || undefined, apiKey, description, default: markDefault },
+      { name, kind, baseURL: baseURL || undefined, apiKey, description },
       { replace: opts.replace },
     );
     console.log(chalk.green(`✓ Added provider '${stored.name}' (${stored.kind}) → ${configPath()}`));
@@ -188,14 +183,12 @@ export async function handleProvidersEdit(name: string, opts: EditProviderOpts):
     opts.baseUrl !== undefined ||
       opts.apiKey !== undefined ||
       opts.description !== undefined ||
-      opts.default !== undefined ||
-      opts.noDefault ||
       opts.clearKey ||
       opts.clearDescription,
   );
   const nonInteractive = hasFieldFlag || !process.stdin.isTTY;
 
-  const patch: { baseURL?: string; apiKey?: string; description?: string; default?: boolean } = {};
+  const patch: { baseURL?: string; apiKey?: string; description?: string } = {};
 
   if (nonInteractive) {
     if (opts.clearKey) patch.apiKey = "";
@@ -203,8 +196,6 @@ export async function handleProvidersEdit(name: string, opts: EditProviderOpts):
     if (opts.clearDescription) patch.description = "";
     else if (opts.description !== undefined) patch.description = opts.description;
     if (opts.baseUrl !== undefined) patch.baseURL = opts.baseUrl;
-    if (opts.default === false || opts.noDefault) patch.default = false;
-    else if (opts.default === true) patch.default = true;
   } else {
     const baseURL = await prompt("Base URL", { default: raw.baseURL ?? "" });
     if ((raw.baseURL ?? "") !== baseURL) patch.baseURL = baseURL;
@@ -223,10 +214,6 @@ export async function handleProvidersEdit(name: string, opts: EditProviderOpts):
     const curDesc = raw.description ?? "";
     const descAns = await prompt("Description", { default: curDesc });
     if (curDesc !== descAns) patch.description = descAns;
-
-    const curDefault = Boolean(raw.default);
-    const wantDefault = await promptConfirm("Mark as the default instance for this kind?", curDefault);
-    if (curDefault !== wantDefault) patch.default = wantDefault;
   }
 
   if (Object.keys(patch).length === 0) {
@@ -265,7 +252,6 @@ export async function handleProvidersView(name: string): Promise<void> {
   console.log(chalk.gray(`  base URL:    ${cfg.baseURL}`));
   console.log(chalk.gray(`  api key:     ${cfg.apiKey ? maskKey(cfg.apiKey) : "(none)"}`));
   console.log(chalk.gray(`  description: ${cfg.description ?? "(none)"}`));
-  console.log(chalk.gray(`  default:     ${raw?.default ? "yes" : "no"}`));
   console.log();
 
   process.stdout.write(chalk.gray(`Testing ${cfg.name} (${cfg.kind}) at ${cfg.baseURL} … `));
@@ -301,7 +287,6 @@ export function buildProvidersCommand(program: Command): Command {
     .option("--base-url <url>", "OpenAI-compatible base URL")
     .option("--api-key <key>", "API key (or a ${ENV_VAR} reference)")
     .option("--description <text>", "human-readable description of this provider")
-    .option("--default", "mark this instance as the default for its kind")
     .option("--replace", "overwrite an existing instance with the same name")
     .action(async (opts: AddProviderOpts) => handleProvidersAdd(opts));
 
@@ -311,8 +296,6 @@ export function buildProvidersCommand(program: Command): Command {
     .option("--base-url <url>", "new base URL")
     .option("--api-key <key>", "new API key (or a ${ENV_VAR} reference; use --clear-key to remove)")
     .option("--description <text>", "new description (use --clear-description to remove)")
-    .option("--default", "mark this instance as the default for its kind")
-    .option("--no-default", "remove the default-for-kind flag")
     .option("--clear-key", "remove the API key from this instance")
     .option("--clear-description", "remove the description from this instance")
     .action(async (name: string, opts: EditProviderOpts) => handleProvidersEdit(name, opts));

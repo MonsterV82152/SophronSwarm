@@ -150,7 +150,12 @@ export function ChatInput({ onSubmit, onCancel, onStop, workspaceDir }: ChatInpu
   );
 }
 
-/** Find the word at the cursor and whether it triggers a menu. */
+/** Find the word at the cursor and whether it triggers a menu.
+ *
+ * For @-mentions, supports both bare (@path) and quoted (@"path with spaces")
+ * syntax.  When the cursor is inside a quoted @-mention, the word extends to
+ * the closing quote (or end of input if the quote is not yet closed).
+ */
 export function wordAt(
   text: string,
   cursor: number,
@@ -179,9 +184,35 @@ function listSlashCommands(prefix: string): string[] {
   return commands.filter((c) => c.startsWith(prefix));
 }
 
-function listFiles(root: string, prefix: string): string[] {
+// --- listFiles cache ---
+// Walking the entire workspace on every keystroke is too expensive for large
+// projects.  We cache the flat file list per workspace root with a short TTL
+// so that repeated @-autocomplete lookups within a few seconds reuse the same
+// scan.  The cache is invalidated automatically after CACHE_TTL_MS.
+
+const CACHE_TTL_MS = 5_000;
+const MAX_WALK_DEPTH = 15;
+const MAX_CACHED_FILES = 5_000;
+
+/** Directories that are never worth suggesting as @file targets. */
+const SKIP_DIRS = new Set([
+  "node_modules", ".git", "dist", "build", ".next", ".cache",
+  ".turbo", "coverage", ".vitest", "out", ".output",
+  "__pycache__", ".pytest_cache", ".mypy_cache", ".tox",
+  "vendor", "target", ".gradle", ".idea", ".vscode",
+]);
+
+interface FileCacheEntry {
+  files: string[];
+  ts: number;
+}
+
+const fileCache = new Map<string, FileCacheEntry>();
+
+function scanWorkspace(root: string): string[] {
   const files: string[] = [];
-  function walk(dir: string) {
+  function walk(dir: string, depth: number) {
+    if (depth > MAX_WALK_DEPTH) return;
     let entries: string[];
     try {
       entries = readdirSync(dir);
@@ -190,6 +221,7 @@ function listFiles(root: string, prefix: string): string[] {
     }
     for (const entry of entries) {
       if (entry.startsWith(".")) continue;
+      if (SKIP_DIRS.has(entry)) continue;
       const full = join(dir, entry);
       let rel: string;
       try {
@@ -201,28 +233,45 @@ function listFiles(root: string, prefix: string): string[] {
       try {
         const st = statSync(full);
         if (st.isDirectory()) {
-          walk(full);
+          walk(full, depth + 1);
         } else {
           files.push(rel);
+          if (files.length >= MAX_CACHED_FILES) return;
         }
       } catch {
         /* ignore */
       }
     }
   }
-  walk(root);
-  const normalized = prefix.replace(/^\/+/, "");
-  return files.filter((f) => f.startsWith(normalized)).slice(0, 20);
+  walk(root, 0);
+  return files;
 }
 
-/** Extract @file mentions and read their contents (capped at 1000 lines). */
+function listFiles(root: string, prefix: string): string[] {
+  const now = Date.now();
+  let entry = fileCache.get(root);
+  if (!entry || now - entry.ts > CACHE_TTL_MS) {
+    entry = { files: scanWorkspace(root), ts: now };
+    fileCache.set(root, entry);
+  }
+  const normalized = prefix.replace(/^\/+/, "");
+  return entry.files.filter((f) => f.startsWith(normalized)).slice(0, 20);
+}
+
+/** Extract @file mentions and read their contents (capped at 1000 lines).
+ *
+ * Supports two syntaxes:
+ *  - @path/to/file.ts        (no spaces)
+ *  - @"path with spaces.ts"  (quoted, for paths containing whitespace)
+ */
 export function resolveAttachments(text: string, workspaceDir: string): FileAttachment[] {
   const seen = new Set<string>();
   const attachments: FileAttachment[] = [];
-  const mentionRe = /@(\S+)/g;
+  // Match @"quoted path" or @bare-path (non-whitespace).
+  const mentionRe = /@"([^"]+)"|@(\S+)/g;
   let match: RegExpExecArray | null;
   while ((match = mentionRe.exec(text)) !== null) {
-    const raw = match[1]!;
+    const raw = match[1] ?? match[2];
     if (!raw) continue;
     try {
       const absPath = safeResolve(workspaceDir, raw);

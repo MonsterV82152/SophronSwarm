@@ -44,8 +44,17 @@ export interface AgentEvent {
 
 /** Global event bus. The loop emits; the TUI subscribes. */
 class AgentEventBus extends EventEmitter {
+  /** Ring buffer of recent events for catch-up on late subscription. */
+  private recent: AgentEvent[] = [];
+  private readonly maxRecent = 500;
+
   /** Publish an event to the run-specific channel and the wildcard channel. */
   publish(event: AgentEvent): void {
+    // Store in ring buffer for late subscribers.
+    this.recent.push(event);
+    if (this.recent.length > this.maxRecent) {
+      this.recent.splice(0, this.recent.length - this.maxRecent);
+    }
     super.emit(event.runId, event);
     super.emit("*", event);
   }
@@ -60,6 +69,16 @@ class AgentEventBus extends EventEmitter {
   onAll(handler: (e: AgentEvent) => void): () => void {
     super.on("*", handler);
     return () => super.off("*", handler);
+  }
+
+  /** Return recent buffered events for a specific agent (for catch-up). */
+  recentForAgent(agentName: string, limit = 100): AgentEvent[] {
+    return this.recent.filter((e) => e.agentName === agentName).slice(-limit);
+  }
+
+  /** Clear the ring buffer (for tests). */
+  clearRecent(): void {
+    this.recent = [];
   }
 }
 

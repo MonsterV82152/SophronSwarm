@@ -8,7 +8,7 @@
  * See docs/PROJECT_OVERVIEW.md §4.3 (delegation).
  */
 import { log } from "../../util/log.js";
-import { runAgent } from "../../agent/loop.js";
+import { runManager } from "../../agent/runManager.js";
 import {
   buildChildCtx,
   buildHandoffPacket,
@@ -83,7 +83,11 @@ export const delegate: ToolSpec = {
     // Fresh AgentRunState (empty messages = full context isolation).
     // Shares workspace, LLM, tools, and checkpointer (SQLite WAL handles
     // concurrent writes safely).
-    const { state: subState } = await runAgent({
+    //
+    // Registered with runManager so the child is tracked in listActive() and
+    // cascaded when the parent is stopped. The parent's signal is wired so
+    // abort propagates immediately.
+    const { promise: childPromise } = runManager.start({
       agent: targetDef,
       task,
       workingDir: state.workingDir,
@@ -92,8 +96,10 @@ export const delegate: ToolSpec = {
       checkpointer: services.checkpointer,
       services,
       delegationCtx: childCtx,
-      abortSignal: signal,
+      parentId: state.runId,
+      parentSignal: signal,
     });
+    const subState = await childPromise;
 
     // ── 5. Build handoff packet — the ONLY thing entering parent context ──
     const packet = buildHandoffPacket(subState, task);

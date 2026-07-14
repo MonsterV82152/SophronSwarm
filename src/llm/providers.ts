@@ -19,24 +19,26 @@
  * ```json
  * {
  *   "providers": [
- *     { "name": "ollama-laptop",  "kind": "ollama",     "baseURL": "http://laptop:11434/v1",  "defaultModel": "qwen3.5:9b" },
- *     { "name": "ollama-desktop", "kind": "ollama",     "baseURL": "http://desktop:11434/v1", "defaultModel": "llama3.1:8b" },
- *     { "name": "or-cloud",       "kind": "openrouter", "apiKey": "${OPENROUTER_API_KEY}",   "defaultModel": "anthropic/claude-sonnet-4" }
+ *     { "name": "ollama-laptop",  "kind": "ollama",     "baseURL": "http://laptop:11434/v1" },
+ *     { "name": "ollama-desktop", "kind": "ollama",     "baseURL": "http://desktop:11434/v1" },
+ *     { "name": "or-cloud",       "kind": "openrouter", "apiKey": "${OPENROUTER_API_KEY}" }
  *   ]
  * }
  * ```
  *
  * `${VAR}` in any string value is substituted from `process.env`.
  *
- * ## Backward compatibility
- * - **Zero-config defaults:** when no providers are configured, three built-in
- *   singletons are created (named "ollama"/"openrouter"/"zai"), reading from
- *   env (OLLAMA_BASE_URL, OPENROUTER_API_KEY, …) exactly as before.
+ * ## V3.1.0 changes
+ * - **No zero-config defaults:** when no providers are configured, the list is
+ *   empty. Operators must configure at least one provider (via `sophron init`
+ *   wizard or `sophron providers add`).
+ * - **No `defaultModel`:** every agent must declare a concrete `model:` id in
+ *   its frontmatter. The provider no longer carries a default model.
  * - **Legacy object config:** if `providers` is an object keyed by kind
  *   (`{ ollama: {...} }`), it's auto-migrated to instances named after each
  *   kind, with a deprecation warning.
  * - **Prefix shortcuts** (`ollama:foo`, `zai:bar`) resolve to the *default*
- *   instance of that kind.
+ *   instance of that kind (marked with `default: true` in config).
  *
  * See docs/IDEAS.md (#1) + docs/ROADMAP.md (M2).
  */
@@ -53,8 +55,7 @@ export type ProviderKind = "openrouter" | "ollama" | "zai" | "openai-compat";
 
 /**
  * A provider *instance* name. Free-form string chosen by the operator
- * (e.g. "ollama-laptop"). The built-in singletons are named exactly
- * "ollama" / "openrouter" / "zai" for backward compatibility.
+ * (e.g. "ollama-laptop"). Must match a `name` in `~/.sophron/config.json`.
  */
 export type ProviderName = string;
 
@@ -85,7 +86,7 @@ export interface RawProviderEntry {
   apiKey?: string;
   /** Human-readable description of what this provider is / what it's good for. */
   description?: string;
-  /** Mark this as the default instance for its kind. */
+  /** Vestigial: prefix shortcuts were removed in V3.1.0. Ignored on read. */
   default?: boolean;
 }
 
@@ -343,8 +344,6 @@ export interface AddProviderInput {
   apiKey?: string;
   /** Human-readable description of this provider. */
   description?: string;
-  /** Mark as the default instance for its kind (prefix shortcuts target it). */
-  default?: boolean;
 }
 
 /**
@@ -373,7 +372,6 @@ export function addProviderInstance(input: AddProviderInput, opts: { replace?: b
   if (input.baseURL && input.baseURL.trim()) entry.baseURL = input.baseURL.trim();
   if (input.apiKey && input.apiKey.trim()) entry.apiKey = input.apiKey.trim();
   if (input.description && input.description.trim()) entry.description = input.description.trim();
-  if (input.default) entry.default = true;
 
   // Normalize providers to the array form.
   let arr: RawProviderEntry[];
@@ -424,7 +422,6 @@ export function removeProviderInstance(name: string): boolean {
  *   - `undefined` (field absent) → keep the current value untouched.
  *   - a non-empty string → set the field to this value.
  *   - an empty string `""` → CLEAR the field (remove it).
- *   - (`default`) `true`/`false` → set/clear the default-for-kind flag.
  *
  * Note: `kind` cannot be changed via a patch (changing kind = a fundamentally
  * different provider; remove + re-add instead). `name` is the lookup key.
@@ -433,7 +430,6 @@ export interface ProviderPatch {
   baseURL?: string;
   apiKey?: string;
   description?: string;
-  default?: boolean;
 }
 
 /**
@@ -465,10 +461,6 @@ function applyPatchToEntry(entry: RawProviderEntry, patch: ProviderPatch): void 
     const v = patch.description.trim();
     if (v) entry.description = v;
     else delete entry.description;
-  }
-  if (patch.default !== undefined) {
-    if (patch.default) entry.default = true;
-    else delete entry.default;
   }
 }
 
